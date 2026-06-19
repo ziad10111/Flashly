@@ -1,0 +1,9 @@
+export { databaseAssistantRepository } from "./databaseAssistantRepository";
+export { databaseDeckRepository } from "./databaseDeckRepository";
+export { databaseFlashcardRepository } from "./databaseFlashcardRepository";
+export { databaseMaterialRepository } from "./databaseMaterialRepository";
+export { databaseProgressRepository } from "./databaseProgressRepository";
+export { databaseReviewRepository } from "./databaseReviewRepository";
+export { databaseSubscriptionRepository } from "./databaseSubscriptionRepository";
+export { databaseUploadRepository } from "./databaseUploadRepository";
+export { databaseUserRepository } from "./databaseUserRepository";

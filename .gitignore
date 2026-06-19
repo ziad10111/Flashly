@@ -17,6 +17,8 @@ expo-env.d.ts
 *.p12
 *.key
 *.mobileprovision
+/ios/
+/android/
 
 # Metro
 .metro-health-check*
@@ -25,6 +27,7 @@ expo-env.d.ts
 npm-debug.*
 yarn-debug.*
 yarn-error.*
+.tmp/
 
 # macOS
 .DS_Store
@@ -41,3 +44,25 @@ app-example
 # generated native folders
 /ios
 /android
+.env
+.env.staging
+.env.production
+.env.local
+.env
+# runtime and test logs
+*.log
+*.err.log
+
+# local emulator/test screenshots
+emulator-*.png
+02-onboarding-screens.png
+
+# accidental nested Expo project
+/my-expo-app/
+
+# local agent tooling and personal notes
+/.agents/
+/skills-lock.json
+/prompt_material/
+/prompts/
+/08-zustand.md

@@ -1,0 +1,35 @@
+services:
+  - type: web
+    name: flashly-backend
+    runtime: node
+    plan: starter
+    buildCommand: npm ci && npm run build:server && npm run db:migrate
+    startCommand: npm run start:server
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: FLASHLY_ENV
+        value: staging
+      - key: PORT
+        value: 8081
+      - key: EXPO_PUBLIC_USE_BACKEND
+        value: "true"
+      - key: EXPO_PUBLIC_FLASHLY_AUTH_MODE
+        value: clerk
+      - key: FLASHLY_DATA_MODE
+        value: database
+      - key: FLASHLY_STORAGE_MODE
+        value: cloud
+      - key: FLASHLY_STORAGE_PROVIDER
+        value: s3
+      - key: FLASHLY_EXTRACTION_MODE
+        value: external
+      - key: FLASHLY_GENERATION_MODE
+        value: external
+      - key: FLASHLY_AI_PROVIDER
+        value: nvidia
+      - key: FLASHLY_OCR_PROVIDER
+        value: ocrspace
+      - key: FLASHLY_BILLING_MODE
+        value: revenuecat

@@ -1,0 +1,78 @@
+import designTokens from "./design-tokens.json";
+
+export const typography = designTokens.typography;
+
+export const typographySamples = [
+  {
+    key: "h1",
+    label: "H1",
+    description: "Page / Screen Title",
+    size: "32px",
+    weight: "Bold",
+    lineHeight: "1.2",
+    previewClassName: "h1 text-ink",
+  },
+  {
+    key: "h2",
+    label: "H2",
+    description: "Section Title",
+    size: "24px",
+    weight: "SemiBold",
+    lineHeight: "1.3",
+    previewClassName: "h2 text-ink",
+  },
+  {
+    key: "h3",
+    label: "H3",
+    description: "Card / Module Title",
+    size: "20px",
+    weight: "SemiBold",
+    lineHeight: "1.3",
+    previewClassName: "h3 text-ink",
+  },
+  {
+    key: "h4",
+    label: "H4",
+    description: "Subheading",
+    size: "16px",
+    weight: "Medium",
+    lineHeight: "1.4",
+    previewClassName: "h4 text-ink",
+  },
+  {
+    key: "bodyLg",
+    label: "Body Large",
+    description: "Important content",
+    size: "16px",
+    weight: "Regular",
+    lineHeight: "1.6",
+    previewClassName: "body-lg text-ink",
+  },
+  {
+    key: "bodyMd",
+    label: "Body Medium",
+    description: "Body text",
+    size: "14px",
+    weight: "Regular",
+    lineHeight: "1.6",
+    previewClassName: "body-md text-muted",
+  },
+  {
+    key: "bodySm",
+    label: "Body Small",
+    description: "Supporting text",
+    size: "13px",
+    weight: "Regular",
+    lineHeight: "1.6",
+    previewClassName: "body-sm text-muted",
+  },
+  {
+    key: "caption",
+    label: "Caption",
+    description: "Labels, meta text",
+    size: "11px",
+    weight: "Regular",
+    lineHeight: "1.4",
+    previewClassName: "caption text-muted",
+  },
+] as const;

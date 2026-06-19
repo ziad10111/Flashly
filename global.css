@@ -1,0 +1,195 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    background-color: #ffffff;
+    color: #0d132b;
+  }
+
+  html,
+  body {
+    background-color: #f6f7fb;
+  }
+
+  * {
+    font-family: "Poppins-Regular";
+  }
+}
+
+@layer components {
+  .h1 {
+    @apply text-h1 font-poppins-bold leading-[38.4px] text-ink;
+  }
+
+  .h2 {
+    @apply text-h2 font-poppins-semibold leading-[31.2px] text-ink;
+  }
+
+  .h3 {
+    @apply text-h3 font-poppins-semibold leading-[26px] text-ink;
+  }
+
+  .h4 {
+    @apply text-h4 font-poppins-medium leading-[22.4px] text-ink;
+  }
+
+  .body-lg {
+    @apply text-body-lg font-poppins leading-[25.6px] text-ink;
+  }
+
+  .body-md {
+    @apply text-body-md font-poppins leading-[22.4px] text-muted;
+  }
+
+  .body-sm {
+    @apply text-body-sm font-poppins leading-[20.8px] text-muted;
+  }
+
+  .caption {
+    @apply text-caption font-poppins leading-[15.4px] tracking-[0.4px] text-muted;
+  }
+
+  .color-lingua-purple {
+    @apply text-lingua-purple;
+  }
+
+  .color-lingua-deep-purple {
+    @apply text-lingua-deep-purple;
+  }
+
+  .color-lingua-blue {
+    @apply text-lingua-blue;
+  }
+
+  .color-lingua-green {
+    @apply text-lingua-green;
+  }
+
+  .color-success {
+    @apply text-success;
+  }
+
+  .color-warning {
+    @apply text-warning;
+  }
+
+  .color-streak {
+    @apply text-streak;
+  }
+
+  .color-error {
+    @apply text-error;
+  }
+
+  .color-info {
+    @apply text-info;
+  }
+
+  .color-ink {
+    @apply text-ink;
+  }
+
+  .color-muted {
+    @apply text-muted;
+  }
+
+  .bg-lingua-surface {
+    @apply bg-surface;
+  }
+
+  .bg-lingua-background {
+    @apply bg-background;
+  }
+
+  .border-lingua {
+    @apply border-border;
+  }
+
+  .btn-primary {
+    @apply items-center justify-center rounded-card bg-lingua-purple px-6 py-6 shadow-card;
+  }
+
+  .btn-primary-label {
+    @apply h3 text-background;
+  }
+
+  .onboarding-shell {
+    @apply flex-1 bg-lingua-background px-8;
+  }
+
+  .onboarding-logo-row {
+    @apply flex-row items-center justify-center gap-3;
+  }
+
+  .onboarding-brand {
+    @apply text-[35px] font-poppins-bold leading-[42px] text-ink;
+  }
+
+  .onboarding-title {
+    @apply text-[56px] font-poppins-bold leading-[67px] tracking-[-1.4px] text-ink;
+  }
+
+  .onboarding-title-accent {
+    @apply text-lingua-purple;
+  }
+
+  .onboarding-subtitle {
+    @apply body-lg max-w-[320px] text-[17px] leading-[31px] text-muted;
+  }
+
+  .speech-bubble {
+    @apply absolute rounded-[22px] px-6 py-4 shadow-card;
+  }
+
+  .speech-bubble-text {
+    @apply text-[26px] font-poppins-medium leading-[31px] text-ink;
+  }
+
+  .speech-bubble-text-accent {
+    @apply text-lingua-purple;
+  }
+
+  .home-link {
+    @apply mt-8 rounded-pill border border-border bg-surface px-6 py-4;
+  }
+
+  .home-link-label {
+    @apply body-md font-poppins-semibold color-lingua-purple;
+  }
+
+  .screen-shell {
+    @apply flex-1 bg-surface;
+  }
+
+  .theme-card {
+    @apply rounded-card border border-border bg-background p-6 shadow-card;
+  }
+
+  .section-kicker {
+    @apply caption font-poppins-semibold uppercase tracking-[0.6px] text-lingua-deep-purple;
+  }
+
+  .section-divider {
+    @apply mt-2 h-px bg-border;
+  }
+
+  .spec-label {
+    @apply caption uppercase;
+  }
+
+  .token-swatch {
+    @apply h-[80px] w-[80px] rounded-soft;
+  }
+
+  .token-card {
+    @apply mb-6 mr-4 w-[92px];
+  }
+}
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+}

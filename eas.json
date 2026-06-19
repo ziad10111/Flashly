@@ -1,0 +1,41 @@
+{
+  "cli": {
+    "version": ">= 16.0.0",
+    "appVersionSource": "remote"
+  },
+  "build": {
+    "development": {
+      "developmentClient": true,
+      "distribution": "internal"
+    },
+    "preview": {
+      "android": {
+        "buildType": "apk"
+      },
+      "distribution": "internal",
+      "env": {
+        "EXPO_PUBLIC_USE_BACKEND": "true",
+        "EXPO_PUBLIC_FLASHLY_AUTH_MODE": "clerk",
+        "EXPO_PUBLIC_REVENUECAT_ENTITLEMENT_ID": "pro"
+      }
+    },
+    "production": {
+      "android": {
+        "buildType": "app-bundle"
+      },
+      "autoIncrement": true,
+      "env": {
+        "EXPO_PUBLIC_USE_BACKEND": "true",
+        "EXPO_PUBLIC_FLASHLY_AUTH_MODE": "clerk",
+        "EXPO_PUBLIC_REVENUECAT_ENTITLEMENT_ID": "pro"
+      }
+    }
+  },
+  "submit": {
+    "production": {
+      "android": {
+        "track": "internal"
+      }
+    }
+  }
+}

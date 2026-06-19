@@ -1,0 +1,227 @@
+# Flashly Staging Validation
+
+Staging validation proves Flashly against real external infrastructure before Google Play Internal Testing.
+
+## Required Services
+
+- PostgreSQL with migrations applied
+- S3-compatible storage or Cloudflare R2
+- Clerk staging app
+- OCR.space account
+- NVIDIA API account
+- RevenueCat sandbox project
+- Sentry staging project
+- Deployed Flashly backend
+
+## Deployment Order
+
+1. Provision PostgreSQL.
+2. Provision S3/R2 bucket.
+3. Deploy backend.
+4. Run `npm run db:migrate`.
+5. Configure Clerk.
+6. Configure OCR.space.
+7. Configure NVIDIA.
+8. Configure RevenueCat.
+9. Check `/health`.
+10. Check `/ready`.
+11. Run `npm run verify:staging`.
+12. Build Android preview.
+13. Run device end-to-end test.
+
+## Backend Deployment Artifact
+
+The standalone backend entrypoint is:
+
+```bash
+npm run start:server
+```
+
+The staging-safe startup wrapper is:
+
+```bash
+npm run start:staging
+```
+
+`start:staging` runs:
+
+```text
+verify staging environment
+-> run database migrations
+-> start standalone backend
+```
+
+The Docker image can be built with:
+
+```bash
+docker build -t flashly-staging .
+```
+
+Run it with staging variables supplied by the host:
+
+```bash
+docker run --env-file .env.staging -p 8081:8081 flashly-staging
+```
+
+Secrets are not baked into the image.
+
+## Environment
+
+Copy `.env.staging.example` into the staging secret manager and fill every placeholder. Do not commit real secrets.
+
+Required staging-only test variables:
+
+```bash
+FLASHLY_STAGING_BASE_URL=https://staging-api.example.com
+FLASHLY_STAGING_TEST_TOKEN=short_lived_clerk_session_token_for_user_a
+FLASHLY_STAGING_SECOND_USER_TOKEN=short_lived_clerk_session_token_for_user_b
+FLASHLY_STAGING_TEST_CLERK_USER_ID=optional_if_test_token_is_not_a_jwt
+FLASHLY_STAGING_RATE_LIMIT_ATTEMPTS=150
+```
+
+The two tokens must belong to different Clerk users. Use short-lived tokens from a staging Clerk app. Do not hardcode passwords or commit tokens.
+`FLASHLY_STAGING_TEST_CLERK_USER_ID` is only needed if the primary token is opaque and the smoke cannot infer the Clerk user id from a JWT `sub` claim.
+
+## Migrations
+
+Run migrations from a backend environment with staging `DATABASE_URL`:
+
+```bash
+npm run db:migrate
+```
+
+Then verify database-specific checks:
+
+```bash
+npm run smoke:database
+npm run smoke:database-generation
+npm run smoke:ownership
+```
+
+## Storage
+
+Cloud storage must use:
+
+```bash
+FLASHLY_STORAGE_MODE=cloud
+FLASHLY_STORAGE_PROVIDER=s3
+```
+
+Run:
+
+```bash
+npm run smoke:storage
+npm run smoke:cloud-extraction
+```
+
+`smoke:storage` writes, reads, compares, and deletes text and binary objects.
+
+`smoke:cloud-extraction` proves extraction can read a durable `storageKey` without process-local temp files.
+
+## Readiness
+
+`GET /health` is lightweight and confirms the server process is alive.
+
+`GET /ready` validates:
+
+- runtime configuration
+- PostgreSQL connectivity
+- schema migrations
+- S3/R2 write/read/delete
+- Clerk configuration
+- OCR configuration
+- NVIDIA configuration
+- RevenueCat configuration
+- security/rate-limit config shape
+
+The endpoint returns non-2xx when required dependencies fail. It does not print secrets.
+
+## Staging End-To-End Smoke
+
+Run:
+
+```bash
+npm run verify:staging
+```
+
+This runs:
+
+```bash
+node scripts/verify-staging-env.js
+node scripts/smoke-staging-e2e.js
+```
+
+The HTTP smoke test validates:
+
+1. `/health`
+2. `/ready`
+3. authenticated staging test user
+4. upload metadata persistence
+5. chunk upload to cloud storage
+6. extraction from `storageKey`
+7. generated MCQ deck persistence
+8. MCQ choices and `correctChoiceId` after database read
+9. cross-user ownership rejection
+10. review session and progress persistence
+11. RevenueCat webhook auth, idempotency, and subscription normalization
+12. malformed JSON and upload validation
+13. rate limiting
+
+The smoke test must fail if required staging config is missing. It must not silently skip required checks.
+
+Before the full E2E smoke, validate the deployed backend:
+
+```bash
+npm run check:staging-deployment
+```
+
+This requires HTTPS `FLASHLY_STAGING_BASE_URL`, checks `/health`, checks `/ready`, and fails if any required dependency reports `failed`.
+
+The smoke uses committed fixtures from `fixtures/staging/` and creates unique run ids for upload names, idempotency keys, deck titles, and RevenueCat event ids.
+
+## RevenueCat Sandbox
+
+Configure RevenueCat webhook URL:
+
+```text
+https://staging-api.example.com/api/billing/revenuecat/webhook
+```
+
+Set `REVENUECAT_WEBHOOK_SECRET` in the backend. The staging smoke uses a synthetic sandbox webhook payload and does not require a real purchase event.
+
+## Troubleshooting
+
+- `/ready` fails database: check `DATABASE_URL`, network allowlist, and migrations.
+- `/ready` fails storage: check bucket name, endpoint, region, and access policy.
+- staging smoke fails auth: refresh both Clerk session tokens and ensure they belong to different users.
+- generation fails: verify NVIDIA key/model/base URL and account access.
+- OCR fails only on scanned fixtures: verify OCR.space account quota and timeout.
+- rate limit check fails: set `FLASHLY_STAGING_RATE_LIMIT_ATTEMPTS` above the configured general limit.
+
+## Cleanup
+
+The staging HTTP smoke uses a run id like `staging-<timestamp>-<random>` in upload names, idempotency keys, and RevenueCat event ids. It does not delete app data because production routes do not expose destructive test cleanup endpoints. Periodically remove staging test rows and objects by that run id/prefix if desired.
+
+## Promotion Criteria
+
+Flashly can move to Google Play Internal Testing only after:
+
+- `npm run verify:staging` passes.
+- Android preview build signs in with Clerk.
+- small PDF, scanned PDF, and large PDF flows pass on a real device.
+- purchase and restore pass in RevenueCat/Google Play internal testing.
+- Sentry receives a controlled staging error.
+
+## Future Upload Hardening
+
+The Expo client still reads large files into base64 before chunking.
+
+Future scaling path:
+
+```text
+Expo client
+-> direct multipart or presigned upload
+-> no whole-file base64 allocation
+```
+
+This is not a staging blocker for the current 50 MB upload limit.
