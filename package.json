@@ -23,6 +23,7 @@
     "test:postgres-config": "node scripts/test-postgres-config.js",
     "test:runtime-validation": "tsx scripts/test-runtime-validation.ts",
     "test:server-readiness-route": "tsx scripts/test-server-readiness-route.ts",
+    "test:staging-clerk-token-provider": "node scripts/test-staging-clerk-token-provider.js",
     "test:storage-readiness": "tsx scripts/test-storage-readiness.ts",
     "typecheck": "tsc --noEmit",
     "pre-release-check": "node scripts/pre-release-check.js",

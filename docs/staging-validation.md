@@ -99,6 +99,18 @@ FLASHLY_STAGING_RATE_LIMIT_ATTEMPTS=150
 The two tokens must belong to different Clerk users. Use short-lived tokens from a staging Clerk app. Do not hardcode passwords or commit tokens.
 `FLASHLY_STAGING_TEST_CLERK_USER_ID` is only needed if the primary token is opaque and the smoke cannot infer the Clerk user id from a JWT `sub` claim.
 
+For long staging smoke runs, prefer session-id token minting instead of static 60-second JWTs:
+
+```bash
+CLERK_SECRET_KEY=server_side_staging_clerk_secret
+FLASHLY_STAGING_TEST_SESSION_ID=session_id_for_user_a
+FLASHLY_STAGING_SECOND_USER_SESSION_ID=session_id_for_user_b
+```
+
+When those three values are configured, `npm run smoke:staging` mints fresh Clerk session tokens with the Clerk Backend API before major authenticated phases. It refreshes User B immediately before the ownership check and User A before review/progress checks, and retries one authenticated request after HTTP 401 by minting a new token. It never logs the Clerk secret, JWTs, session ids, or authorization headers.
+
+Static token variables remain supported for backward compatibility. If session ids are not configured, provide both `FLASHLY_STAGING_TEST_TOKEN` and `FLASHLY_STAGING_SECOND_USER_TOKEN`; a 401 later in the run usually means the static token expired and the session-id strategy should be used.
+
 ## Migrations
 
 Run migrations from a backend environment with staging `DATABASE_URL`:

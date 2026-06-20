@@ -63,8 +63,6 @@ const requiredPresence = [
   "FLASHLY_S3_REGION",
   "FLASHLY_S3_SECRET_ACCESS_KEY",
   "FLASHLY_STAGING_BASE_URL",
-  "FLASHLY_STAGING_SECOND_USER_TOKEN",
-  "FLASHLY_STAGING_TEST_TOKEN",
   "REVENUECAT_WEBHOOK_SECRET",
 ];
 
@@ -106,12 +104,50 @@ const main = () => {
     }
   }
 
+  const primaryStaticToken = envValue("FLASHLY_STAGING_TEST_TOKEN");
+  const secondStaticToken = envValue("FLASHLY_STAGING_SECOND_USER_TOKEN");
+  const primarySessionId = envValue("FLASHLY_STAGING_TEST_SESSION_ID");
+  const secondSessionId = envValue("FLASHLY_STAGING_SECOND_USER_SESSION_ID");
+  const hasStaticTokens = Boolean(primaryStaticToken && secondStaticToken);
+  const hasSessionTokens = Boolean(envValue("CLERK_SECRET_KEY") && primarySessionId && secondSessionId);
+  const hasPartialStaticTokens = Boolean(primaryStaticToken || secondStaticToken) && !hasStaticTokens;
+  const hasPartialSessionTokens = Boolean(primarySessionId || secondSessionId) && !hasSessionTokens;
+
+  if (!hasStaticTokens && !hasSessionTokens) {
+    failures.push(
+      "Configure either FLASHLY_STAGING_TEST_TOKEN plus FLASHLY_STAGING_SECOND_USER_TOKEN, or CLERK_SECRET_KEY plus both staging session ids.",
+    );
+  }
+
+  if (hasPartialStaticTokens) {
+    failures.push("FLASHLY_STAGING_TEST_TOKEN and FLASHLY_STAGING_SECOND_USER_TOKEN must be configured together.");
+  }
+
+  if (hasPartialSessionTokens) {
+    failures.push("FLASHLY_STAGING_TEST_SESSION_ID and FLASHLY_STAGING_SECOND_USER_SESSION_ID must be configured together with CLERK_SECRET_KEY.");
+  }
+
+  for (const [key, value] of [
+    ["FLASHLY_STAGING_TEST_TOKEN", primaryStaticToken],
+    ["FLASHLY_STAGING_SECOND_USER_TOKEN", secondStaticToken],
+    ["FLASHLY_STAGING_TEST_SESSION_ID", primarySessionId],
+    ["FLASHLY_STAGING_SECOND_USER_SESSION_ID", secondSessionId],
+  ]) {
+    if (value && isPlaceholder(value)) {
+      failures.push(`${key} appears to contain a placeholder value.`);
+    }
+  }
+
   for (const key of ["EXPO_PUBLIC_FLASHLY_API_BASE_URL", "FLASHLY_STAGING_BASE_URL", "FLASHLY_S3_ENDPOINT", "FLASHLY_AI_BASE_URL"]) {
     validateUrl(key, failures);
   }
 
-  if (envValue("FLASHLY_STAGING_TEST_TOKEN") && envValue("FLASHLY_STAGING_TEST_TOKEN") === envValue("FLASHLY_STAGING_SECOND_USER_TOKEN")) {
+  if (hasStaticTokens && primaryStaticToken === secondStaticToken) {
     failures.push("FLASHLY_STAGING_TEST_TOKEN and FLASHLY_STAGING_SECOND_USER_TOKEN must belong to different users.");
+  }
+
+  if (hasSessionTokens && primarySessionId === secondSessionId) {
+    failures.push("FLASHLY_STAGING_TEST_SESSION_ID and FLASHLY_STAGING_SECOND_USER_SESSION_ID must belong to different users.");
   }
 
   if (failures.length > 0) {

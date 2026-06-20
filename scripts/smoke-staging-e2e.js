@@ -1,5 +1,11 @@
 const fs = require("node:fs");
 const path = require("node:path");
+const {
+  createAuthenticatedClient,
+  createClerkSessionTokenProvider,
+  createStaticTokenProvider,
+  decodeJwtSub,
+} = require("./staging-clerk-token-provider");
 
 const repoRoot = path.resolve(__dirname, "..");
 const envPath = path.join(repoRoot, ".env");
@@ -45,29 +51,6 @@ const requiredEnv = (key) => {
   return value;
 };
 
-const base64UrlDecode = (value) => {
-  const normalized = value.replace(/-/g, "+").replace(/_/g, "/");
-  const padded = normalized.padEnd(normalized.length + ((4 - (normalized.length % 4)) % 4), "=");
-
-  return Buffer.from(padded, "base64").toString("utf8");
-};
-
-const decodeJwtSub = (token) => {
-  const payload = token.split(".")[1];
-
-  if (!payload) {
-    throw new Error("Staging test token is not a JWT and no user id can be inferred.");
-  }
-
-  const decoded = JSON.parse(base64UrlDecode(payload));
-
-  if (typeof decoded.sub !== "string" || !decoded.sub.trim()) {
-    throw new Error("Staging test token JWT does not include a sub claim.");
-  }
-
-  return decoded.sub;
-};
-
 const createClient = (baseUrl, token) => {
   const root = baseUrl.replace(/\/+$/g, "");
 
@@ -109,7 +92,7 @@ const assert = (condition, message) => {
 const assertStatus = (result, expected, message) => {
   assert(
     result.status === expected,
-    `${message} ${result.method ?? "GET"} ${result.pathName ?? ""} expected ${expected}, got ${result.status}. requestId=${result.requestId ?? "none"} message=${result.json?.error?.message ?? "none"}`,
+    `${message} ${result.method ?? "GET"} ${result.pathName ?? ""} expected ${expected}, got ${result.status}. requestId=${result.requestId ?? "none"} message=${result.json?.error?.message ?? "none"}${result.authHint ? ` hint=${result.authHint}` : ""}`,
   );
 };
 
@@ -192,16 +175,53 @@ const main = async () => {
   loadDotEnv();
 
   const baseUrl = requiredEnv("FLASHLY_STAGING_BASE_URL");
-  const primaryToken = requiredEnv("FLASHLY_STAGING_TEST_TOKEN");
-  const secondToken = requiredEnv("FLASHLY_STAGING_SECOND_USER_TOKEN");
-  const revenueCatSecret = requiredEnv("REVENUECAT_WEBHOOK_SECRET");
-  const primaryUserId = envValue("FLASHLY_STAGING_TEST_CLERK_USER_ID") ?? decodeJwtSub(primaryToken);
+  const clerkSecretKey = envValue("CLERK_SECRET_KEY");
+  const primarySessionId = envValue("FLASHLY_STAGING_TEST_SESSION_ID");
+  const secondSessionId = envValue("FLASHLY_STAGING_SECOND_USER_SESSION_ID");
+  const hasSessionTokenConfig = Boolean(clerkSecretKey && primarySessionId && secondSessionId);
 
-  assert(primaryToken !== secondToken, "Staging primary and second user tokens must be different.");
+  if ((primarySessionId || secondSessionId) && !hasSessionTokenConfig) {
+    throw new Error(
+      "Configure CLERK_SECRET_KEY, FLASHLY_STAGING_TEST_SESSION_ID, and FLASHLY_STAGING_SECOND_USER_SESSION_ID together, or omit session ids to use static staging tokens.",
+    );
+  }
+
+  const primaryToken = hasSessionTokenConfig ? undefined : requiredEnv("FLASHLY_STAGING_TEST_TOKEN");
+  const secondToken = hasSessionTokenConfig ? undefined : requiredEnv("FLASHLY_STAGING_SECOND_USER_TOKEN");
+  const revenueCatSecret = requiredEnv("REVENUECAT_WEBHOOK_SECRET");
+
+  const primaryTokenProvider = hasSessionTokenConfig
+    ? createClerkSessionTokenProvider({
+        label: "primary staging user",
+        secretKey: clerkSecretKey,
+        sessionId: primarySessionId,
+      })
+    : createStaticTokenProvider({
+        label: "primary staging user",
+        token: primaryToken,
+      });
+  const secondTokenProvider = hasSessionTokenConfig
+    ? createClerkSessionTokenProvider({
+        label: "second staging user",
+        secretKey: clerkSecretKey,
+        sessionId: secondSessionId,
+      })
+    : createStaticTokenProvider({
+        label: "second staging user",
+        token: secondToken,
+      });
+  const primaryUserId =
+    envValue("FLASHLY_STAGING_TEST_CLERK_USER_ID") ?? decodeJwtSub(await primaryTokenProvider.getToken());
+
+  if (hasSessionTokenConfig) {
+    assert(primarySessionId !== secondSessionId, "Staging primary and second session ids must belong to different users.");
+  } else {
+    assert(primaryToken !== secondToken, "Staging primary and second user tokens must be different.");
+  }
 
   const publicClient = createClient(baseUrl);
-  const client = createClient(baseUrl, primaryToken);
-  const secondClient = createClient(baseUrl, secondToken);
+  const client = createAuthenticatedClient(baseUrl, primaryTokenProvider);
+  const secondClient = createAuthenticatedClient(baseUrl, secondTokenProvider);
   const unique = `staging-${Date.now()}-${Math.random().toString(36).slice(2)}`;
   const sourceText = fs.readFileSync(fixturePath, "utf8");
   const fileName = `${unique}.txt`;
@@ -388,11 +408,16 @@ const main = async () => {
   });
 
   await runStep("ownership", "ownership rejects second user", async () => {
+    await secondTokenProvider.getToken({ forceRefresh: true });
     const result = await secondClient(`/api/decks/${encodeURIComponent(generation.deckId)}`);
-    assert(result.status === 403 || result.status === 404, `Cross-user deck access should reject, got ${result.status}.`);
+    assert(
+      result.status === 403 || result.status === 404,
+      `Cross-user deck access should reject, got ${result.status}.${result.authHint ? ` ${result.authHint}` : ""}`,
+    );
   });
 
   await runStep("review", "create review session and persist progress", async () => {
+    await primaryTokenProvider.getToken({ forceRefresh: true });
     const now = new Date();
     const completedAt = new Date(now.getTime() + 1000).toISOString();
     const reviews = deck.cards.slice(0, 3).map((card, index) => ({
@@ -466,15 +491,29 @@ const main = async () => {
   });
 
   await runStep("security", "malformed JSON is rejected", async () => {
-    const response = await fetch(`${baseUrl.replace(/\/+$/g, "")}/api/uploads`, {
-      body: "{not-json",
-      headers: {
-        Authorization: `Bearer ${primaryToken}`,
-        "Content-Type": "application/json",
-      },
-      method: "POST",
-    });
-    assert(response.status === 400, `Malformed JSON should return 400, got ${response.status}.`);
+    const requestMalformedJson = async (token) =>
+      fetch(`${baseUrl.replace(/\/+$/g, "")}/api/uploads`, {
+        body: "{not-json",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        method: "POST",
+      });
+    let response = await requestMalformedJson(await primaryTokenProvider.getToken());
+
+    if (response.status === 401 && primaryTokenProvider.canRefresh) {
+      response = await requestMalformedJson(await primaryTokenProvider.getToken({ forceRefresh: true }));
+    }
+
+    assert(
+      response.status === 400,
+      `Malformed JSON should return 400, got ${response.status}.${
+        response.status === 401 && !primaryTokenProvider.canRefresh
+          ? " Static Clerk session token may have expired; configure CLERK_SECRET_KEY plus staging session ids to mint fresh tokens."
+          : ""
+      }`,
+    );
     assert(response.headers.get("x-request-id"), "Malformed JSON response should include request id.");
   });
 
