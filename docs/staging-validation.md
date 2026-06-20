@@ -63,6 +63,21 @@ Run it with staging variables supplied by the host:
 docker run --env-file .env.staging -p 8081:8081 flashly-staging
 ```
 
+For Railway staging, use `railway.json` or set the Railway Start Command manually to:
+
+```bash
+npm run start:staging
+```
+
+Do not rely on `render.yaml` for Railway; it applies only to Render.
+
+Successful startup should log the staging runtime validation, database migration run, and backend server startup. After deployment, verify:
+
+```text
+GET /health -> HTTP 200
+GET /ready -> HTTP 200
+```
+
 Secrets are not baked into the image.
 
 ## Environment

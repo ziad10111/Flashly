@@ -45,6 +45,12 @@ Start the production server:
 npm run start:server
 ```
 
+Start the staging server with runtime validation and migrations:
+
+```bash
+npm run start:staging
+```
+
 Run migrations:
 
 ```bash
@@ -152,26 +158,44 @@ render.yaml
 It defines:
 
 - build command: `npm ci && npm run build:server && npm run db:migrate`
-- start command: `npm run start:server`
+- start command: `npm run start:staging`
 - health check path: `/health`
 
 Set secret values in the Render dashboard. Do not commit secrets to `render.yaml`.
+`render.yaml` applies only to Render. Railway does not read it.
 
 ## Railway Notes
 
-Use:
+This repo includes:
 
-```bash
-npm ci && npm run build:server && npm run db:migrate
+```text
+railway.json
 ```
 
-as the build command, and:
+Railway must run:
 
 ```bash
-npm run start:server
+npm run start:staging
 ```
 
-as the start command. Railway will provide `PORT`; the server reads it automatically.
+The staging startup sequence is:
+
+```text
+validate staging runtime environment
+-> run database migrations
+-> start backend server
+```
+
+The Dockerfile also defaults to `CMD ["npm", "run", "start:staging"]`, so Railway's Docker deployment and Railway's explicit start command agree.
+
+Railway provides `PORT`; Flashly reads it automatically and binds the backend to `0.0.0.0`.
+
+After deploy, verify:
+
+```text
+GET https://your-flashly-backend.example/health
+GET https://your-flashly-backend.example/ready
+```
 
 ## Fly.io Notes
 

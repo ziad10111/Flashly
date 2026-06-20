@@ -43,7 +43,40 @@ export type RuntimeValidationResult = {
   sections: Record<string, RuntimeValidationSection>;
 };
 
-const PLACEHOLDER_PATTERN = /^(|changeme|change_me|todo|replace_me|example|placeholder|your_|server_side_|pk_test_or_live_key)/i;
+const EXPLICIT_PLACEHOLDER_VALUES = new Set([
+  "changeme",
+  "change-me",
+  "change_me",
+  "replace-me",
+  "replace_me",
+  "placeholder",
+  "todo",
+  "tbd",
+]);
+
+export const isExplicitPlaceholderValue = (value: string | undefined) => {
+  const trimmed = value?.trim();
+
+  if (!trimmed) {
+    return false;
+  }
+
+  const normalized = trimmed.toLowerCase();
+
+  if (EXPLICIT_PLACEHOLDER_VALUES.has(normalized)) {
+    return true;
+  }
+
+  if (/^<[^<>]+>$/.test(trimmed)) {
+    return true;
+  }
+
+  if (/^\$\{[A-Z0-9_]+\}$/i.test(trimmed)) {
+    return true;
+  }
+
+  return /^(your-|replace-|insert-|enter-)/i.test(trimmed);
+};
 
 const getRuntimeEnvironment = (): FlashlyRuntimeEnvironment => {
   const raw = process.env.FLASHLY_ENV?.trim().toLowerCase() || process.env.NODE_ENV?.trim().toLowerCase();
@@ -95,7 +128,7 @@ const requireValue = (
     return;
   }
 
-  if (PLACEHOLDER_PATTERN.test(value ?? "")) {
+  if (isExplicitPlaceholderValue(value)) {
     addIssue(sections, sectionName, {
       key,
       message: `${key} appears to contain a placeholder value.`,
@@ -189,6 +222,13 @@ export const validateRuntimeEnvironment = (): RuntimeValidationResult => {
 
   if (FLASHLY_STORAGE_MODE === "cloud") {
     requireValue(sections, "storage", "FLASHLY_STORAGE_PROVIDER", FLASHLY_STORAGE_PROVIDER);
+    if (FLASHLY_STORAGE_PROVIDER && FLASHLY_STORAGE_PROVIDER !== "s3") {
+      addIssue(sections, "storage", {
+        key: "FLASHLY_STORAGE_PROVIDER",
+        message: "Cloud storage requires FLASHLY_STORAGE_PROVIDER=s3.",
+        severity: "error",
+      });
+    }
     requireValue(sections, "storage", "FLASHLY_S3_ENDPOINT", FLASHLY_S3_ENDPOINT);
     requireValue(sections, "storage", "FLASHLY_S3_REGION", FLASHLY_S3_REGION);
     requireValue(sections, "storage", "FLASHLY_S3_BUCKET", FLASHLY_S3_BUCKET);
@@ -273,6 +313,16 @@ export const validateRuntimeEnvironment = (): RuntimeValidationResult => {
       "EXPO_PUBLIC_REVENUECAT_ENTITLEMENT_ID",
       process.env.EXPO_PUBLIC_REVENUECAT_ENTITLEMENT_ID?.trim(),
     );
+    if (
+      process.env.EXPO_PUBLIC_REVENUECAT_ENTITLEMENT_ID?.trim() &&
+      process.env.EXPO_PUBLIC_REVENUECAT_ENTITLEMENT_ID.trim() !== "pro"
+    ) {
+      addIssue(sections, "billing", {
+        key: "EXPO_PUBLIC_REVENUECAT_ENTITLEMENT_ID",
+        message: "RevenueCat entitlement id must be pro.",
+        severity: "error",
+      });
+    }
   } else if (strict) {
     addIssue(sections, "billing", {
       key: "FLASHLY_BILLING_MODE",

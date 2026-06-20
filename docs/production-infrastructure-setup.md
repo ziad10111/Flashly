@@ -90,7 +90,7 @@ EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY=pk_live_replace_me
 4. Set backend env:
 
 ```bash
-CLERK_SECRET_KEY=sk_live_replace_me
+CLERK_SECRET_KEY=clerk_live_secret_replace_me
 EXPO_PUBLIC_FLASHLY_AUTH_MODE=clerk
 ```
 
@@ -215,14 +215,30 @@ GET https://your-flashly-backend.example/ready
 
 ## 9. Backend Deployment on Railway
 
-Recommended Railway commands:
+This repo includes `railway.json` and a Dockerfile. Railway should use the Dockerfile and run:
 
 ```bash
-Build Command: npm ci && npm run build:server && npm run db:migrate
-Start Command: npm run start:server
+Start Command: npm run start:staging
 ```
 
-Railway provides `PORT`; Flashly reads it automatically. Set all backend variables from `.env.backend.production.example` in Railway variables.
+`render.yaml` applies only to Render and does not configure Railway.
+
+`npm run start:staging` performs:
+
+```text
+validate staging runtime environment
+-> run database migrations
+-> start backend server
+```
+
+Railway provides `PORT`; Flashly reads it automatically and binds to `0.0.0.0`. Set all backend variables from `.env.backend.production.example` in Railway variables.
+
+After deploy, verify:
+
+```text
+GET /health -> HTTP 200
+GET /ready -> HTTP 200
+```
 
 ## 10. App Build Backend URL
 

@@ -60,6 +60,7 @@ type RouteMatch = {
 };
 
 const port = Number(process.env.PORT || 8081);
+const host = process.env.HOST || "0.0.0.0";
 const maxBodyBytes = Number(process.env.FLASHLY_SERVER_MAX_BODY_BYTES || 80 * 1024 * 1024);
 const isProduction = process.env.NODE_ENV === "production";
 
@@ -535,6 +536,6 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse)
 
 createServer((request, response) => {
   void handleRequest(request, response);
-}).listen(port, () => {
-  console.info(`Flashly backend listening on port ${port} (${startupValidation.environment})`);
+}).listen(port, host, () => {
+  console.info(`Flashly backend listening on ${host}:${port} (${startupValidation.environment})`);
 });

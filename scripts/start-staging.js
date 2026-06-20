@@ -25,7 +25,7 @@ const run = (label, args) => {
 };
 
 const main = () => {
-  run("staging environment validation", ["run", "verify:staging-env"]);
+  run("staging runtime environment validation", ["run", "verify:staging-runtime"]);
   run("database migrations", ["run", "db:migrate"]);
 
   console.log("RUN backend server: npm run start:server");
