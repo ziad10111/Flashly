@@ -73,7 +73,9 @@ const productionEnvLooksConfigured = () => {
     ([key, expected]) => envValue(key) === expected,
   );
 
-  return modesConfigured && hasEnv(productionPresenceKeys);
+  const hasDatabaseCa = Boolean(envValue("DATABASE_CA_CERT") || envValue("DATABASE_CA_CERT_BASE64"));
+
+  return modesConfigured && hasEnv(productionPresenceKeys) && hasDatabaseCa;
 };
 
 const storageEnvLooksConfigured = () =>
@@ -217,6 +219,8 @@ const main = async () => {
 
   runNpmScript("TypeScript", "typecheck");
   runNpmScript("Lint", "lint");
+  runNpmScript("Runtime validation", "test:runtime-validation");
+  runNpmScript("PostgreSQL TLS configuration", "test:postgres-config");
   runNpmScript("RevenueCat webhook security", "smoke:billing");
 
   const backend = await checkBackendReachable();

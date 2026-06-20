@@ -7,6 +7,7 @@ const assert = (condition: boolean, message: string) => {
 Object.assign(process.env, {
   CLERK_SECRET_KEY: "clerk-test-secret-value",
   DATABASE_URL: "postgresql://db.example.com/defaultdb?sslmode=require",
+  DATABASE_CA_CERT: "-----BEGIN CERTIFICATE-----\\nMIIBtestcertificatebody\\n-----END CERTIFICATE-----",
   EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY: "pk_test_staging_value",
   EXPO_PUBLIC_FLASHLY_AUTH_MODE: "clerk",
   EXPO_PUBLIC_REVENUECAT_ANDROID_API_KEY: "goog_test_store_sdk_key",

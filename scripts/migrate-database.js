@@ -1,6 +1,7 @@
 const fs = require("node:fs");
 const path = require("node:path");
 const { Pool } = require("pg");
+const { createPostgresPoolConfig } = require("../src/api/server/database/postgresConnectionConfig");
 
 const repoRoot = path.resolve(__dirname, "..");
 const envPath = path.join(repoRoot, ".env");
@@ -57,10 +58,7 @@ const getMigrationFiles = () =>
 
 const main = async () => {
   const databaseUrl = getDatabaseUrl();
-  const pool = new Pool({
-    connectionString: databaseUrl,
-    ssl: /localhost|127\.0\.0\.1/.test(databaseUrl) ? undefined : { rejectUnauthorized: false },
-  });
+  const pool = new Pool(createPostgresPoolConfig({ databaseUrl }));
 
   try {
     await pool.query(`

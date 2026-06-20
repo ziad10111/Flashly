@@ -20,6 +20,7 @@
     "smoke:billing": "tsx scripts/smoke-revenuecat-webhook-security.ts",
     "smoke:pdf": "node scripts/smoke-pdf-extraction.js",
     "check:staging-deployment": "node scripts/check-staging-deployment.js",
+    "test:postgres-config": "node scripts/test-postgres-config.js",
     "test:runtime-validation": "tsx scripts/test-runtime-validation.ts",
     "typecheck": "tsc --noEmit",
     "pre-release-check": "node scripts/pre-release-check.js",

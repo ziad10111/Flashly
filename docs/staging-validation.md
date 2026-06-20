@@ -105,6 +105,20 @@ Run migrations from a backend environment with staging `DATABASE_URL`:
 npm run db:migrate
 ```
 
+For Aiven PostgreSQL, add the project CA certificate to Railway before running migrations:
+
+```bash
+DATABASE_CA_CERT="-----BEGIN CERTIFICATE-----\n...\n-----END CERTIFICATE-----"
+```
+
+or:
+
+```bash
+DATABASE_CA_CERT_BASE64=base64_encoded_pem_certificate
+```
+
+Flashly requires one of these in staging database mode and keeps `rejectUnauthorized: true`. The connection helper removes `sslmode`, `sslcert`, `sslkey`, and `sslrootcert` from `DATABASE_URL` and applies TLS through the shared node-postgres `ssl` object.
+
 Then verify database-specific checks:
 
 ```bash

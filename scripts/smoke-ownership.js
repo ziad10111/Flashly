@@ -1,6 +1,7 @@
 const fs = require("node:fs");
 const path = require("node:path");
 const { Pool } = require("pg");
+const { createPostgresPoolConfig } = require("../src/api/server/database/postgresConnectionConfig");
 
 const repoRoot = path.resolve(__dirname, "..");
 const envPath = path.join(repoRoot, ".env");
@@ -61,10 +62,7 @@ const main = async () => {
     throw new Error("DATABASE_URL is required to run ownership smoke checks.");
   }
 
-  const pool = new Pool({
-    connectionString: databaseUrl,
-    ssl: /localhost|127\.0\.0\.1/.test(databaseUrl) ? undefined : { rejectUnauthorized: false },
-  });
+  const pool = new Pool(createPostgresPoolConfig({ databaseUrl }));
   const client = await pool.connect();
   const suffix = Date.now().toString(36);
 

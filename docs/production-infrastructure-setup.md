@@ -16,26 +16,29 @@ Steps:
 
 1. Create a production PostgreSQL database.
 2. Copy the connection string into the backend environment as `DATABASE_URL`.
-3. Make sure SSL is enabled if the provider requires it.
-4. Set:
+3. If the provider uses a project CA, such as Aiven, store it as `DATABASE_CA_CERT` or `DATABASE_CA_CERT_BASE64`.
+4. Make sure SSL is enabled if the provider requires it.
+5. Set:
 
 ```bash
 FLASHLY_DATA_MODE=database
+DATABASE_CA_CERT=
+DATABASE_CA_CERT_BASE64=
 ```
 
-5. Run migrations from the backend deployment environment:
+6. Run migrations from the backend deployment environment:
 
 ```bash
 npm run db:migrate
 ```
 
-6. Run the database smoke test:
+7. Run the database smoke test:
 
 ```bash
 npm run smoke:database
 ```
 
-7. Run the ownership smoke test:
+8. Run the ownership smoke test:
 
 ```bash
 npm run smoke:ownership

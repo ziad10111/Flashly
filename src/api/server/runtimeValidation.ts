@@ -23,6 +23,7 @@ import {
   FLASHLY_STORAGE_PROVIDER,
   REVENUECAT_WEBHOOK_SECRET,
 } from "./config";
+import { resolveDatabaseCaCertificate } from "./database/postgresConnectionConfig";
 
 export type FlashlyRuntimeEnvironment = "local" | "test" | "staging" | "production";
 
@@ -212,6 +213,25 @@ export const validateRuntimeEnvironment = (): RuntimeValidationResult => {
 
   if (FLASHLY_DATA_MODE === "database") {
     requireValue(sections, "database", "DATABASE_URL", DATABASE_URL);
+    if (strict) {
+      try {
+        const certificate = resolveDatabaseCaCertificate(process.env);
+
+        if (!certificate) {
+          addIssue(sections, "database", {
+            key: "DATABASE_CA_CERT",
+            message: "DATABASE_CA_CERT or DATABASE_CA_CERT_BASE64 is required for staging and production database mode.",
+            severity: "error",
+          });
+        }
+      } catch {
+        addIssue(sections, "database", {
+          key: "DATABASE_CA_CERT",
+          message: "Database CA certificate must be a valid PEM certificate.",
+          severity: "error",
+        });
+      }
+    }
   } else if (strict) {
     addIssue(sections, "database", {
       key: "FLASHLY_DATA_MODE",

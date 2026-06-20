@@ -7,6 +7,7 @@ const {
 const fs = require("node:fs");
 const path = require("node:path");
 const { Pool } = require("pg");
+const { createPostgresPoolConfig } = require("../src/api/server/database/postgresConnectionConfig");
 
 const repoRoot = path.resolve(__dirname, "..");
 const envPath = path.join(repoRoot, ".env");
@@ -80,6 +81,9 @@ const printSection = (name, ok, details = []) => {
 
 const validateEnvironment = () => {
   const missing = requiredPresence.filter((key) => !envValue(key));
+  if (!envValue("DATABASE_CA_CERT") && !envValue("DATABASE_CA_CERT_BASE64")) {
+    missing.push("DATABASE_CA_CERT or DATABASE_CA_CERT_BASE64");
+  }
   const misconfigured = Object.entries(requiredValues)
     .filter(([key, expected]) => envValue(key) !== expected)
     .map(([key, expected]) => `${key} must be ${expected}`);
@@ -98,10 +102,16 @@ const checkPostgres = async () => {
     return { ok: false, details: ["DATABASE_URL is missing."] };
   }
 
-  const pool = new Pool({
-    connectionString: databaseUrl,
-    ssl: /localhost|127\.0\.0\.1/.test(databaseUrl) ? undefined : { rejectUnauthorized: false },
-  });
+  let pool;
+
+  try {
+    pool = new Pool(createPostgresPoolConfig({ databaseUrl }));
+  } catch (error) {
+    return {
+      ok: false,
+      details: [error instanceof Error ? error.message : String(error)],
+    };
+  }
 
   try {
     const result = await pool.query("SELECT 1 AS ok");
@@ -117,7 +127,7 @@ const checkPostgres = async () => {
       details: [error instanceof Error ? error.message : String(error)],
     };
   } finally {
-    await pool.end().catch(() => undefined);
+    await pool?.end().catch(() => undefined);
   }
 };
 

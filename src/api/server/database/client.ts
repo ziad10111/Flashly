@@ -2,6 +2,7 @@ import { Pool, type PoolClient, type QueryResult, type QueryResultRow } from "pg
 
 import { DATABASE_URL } from "../config";
 import { ServerRepositoryNotConfiguredError } from "../repositoryErrors";
+import { createPostgresPoolConfig } from "./postgresConnectionConfig";
 
 let pool: Pool | null = null;
 
@@ -21,13 +22,7 @@ export const getPostgresPool = () => {
     return pool;
   }
 
-  const connectionString = requireDatabaseUrl();
-  const shouldUseSsl = !/localhost|127\.0\.0\.1/.test(connectionString);
-
-  pool = new Pool({
-    connectionString,
-    ssl: shouldUseSsl ? { rejectUnauthorized: false } : undefined,
-  });
+  pool = new Pool(createPostgresPoolConfig({ databaseUrl: requireDatabaseUrl() }));
 
   return pool;
 };

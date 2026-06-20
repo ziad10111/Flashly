@@ -1,6 +1,7 @@
 const fs = require("node:fs");
 const path = require("node:path");
 const { Pool } = require("pg");
+const { createPostgresPoolConfig } = require("../src/api/server/database/postgresConnectionConfig");
 
 const repoRoot = path.resolve(__dirname, "..");
 const envPath = path.join(repoRoot, ".env");
@@ -78,11 +79,7 @@ const main = async () => {
   assert(storageService.storeObject, "cloud storage service must support storeObject.");
   assert(storageService.readObject, "cloud storage service must support readObject.");
 
-  const databaseUrl = process.env.DATABASE_URL.trim();
-  const pool = new Pool({
-    connectionString: databaseUrl,
-    ssl: /localhost|127\.0\.0\.1/.test(databaseUrl) ? undefined : { rejectUnauthorized: false },
-  });
+  const pool = new Pool(createPostgresPoolConfig({ databaseUrl: process.env.DATABASE_URL.trim() }));
   const unique = `smoke-cloud-extraction-${Date.now()}`;
   const storageKey = `uploads/${unique}/cloud-source.txt`;
   const sourceText =

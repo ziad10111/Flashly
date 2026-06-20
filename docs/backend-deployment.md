@@ -126,6 +126,8 @@ EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY=...
 CLERK_SECRET_KEY=...
 FLASHLY_DATA_MODE=database
 DATABASE_URL=...
+DATABASE_CA_CERT=...
+# or DATABASE_CA_CERT_BASE64=...
 FLASHLY_STORAGE_MODE=cloud
 FLASHLY_STORAGE_PROVIDER=s3
 FLASHLY_S3_ENDPOINT=...
@@ -146,6 +148,30 @@ REVENUECAT_WEBHOOK_SECRET=...
 ```
 
 Never expose server-only secrets with `EXPO_PUBLIC_`.
+
+## PostgreSQL TLS for Aiven and Managed Providers
+
+For staging and production database mode, Flashly verifies PostgreSQL TLS certificates with Node's normal hostname and certificate checks enabled.
+
+Managed PostgreSQL providers such as Aiven may use a project CA that is not in Node's default trust store. Store the project CA in the deployment environment as one of:
+
+```bash
+DATABASE_CA_CERT="-----BEGIN CERTIFICATE-----\n...\n-----END CERTIFICATE-----"
+DATABASE_CA_CERT_BASE64=base64_encoded_pem_certificate
+```
+
+`DATABASE_CA_CERT` may contain escaped `\n` sequences. `DATABASE_CA_CERT_BASE64` must decode to a PEM certificate. Do not commit a real CA certificate or database credentials.
+
+Flashly strips PostgreSQL URL SSL query parameters such as `sslmode`, `sslcert`, `sslkey`, and `sslrootcert` before connecting, then supplies TLS through:
+
+```js
+ssl: {
+  ca: resolvedCaCertificate,
+  rejectUnauthorized: true
+}
+```
+
+Do not use `rejectUnauthorized: false`, `NODE_TLS_REJECT_UNAUTHORIZED=0`, or any global TLS bypass.
 
 ## Render Example
 
