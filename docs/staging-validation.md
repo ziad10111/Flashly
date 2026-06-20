@@ -78,6 +78,8 @@ GET /health -> HTTP 200
 GET /ready -> HTTP 200
 ```
 
+`/health` includes safe release metadata when Railway provides it, including the deployed commit from `RAILWAY_GIT_COMMIT_SHA`. If `/ready` still shows an older response shape, compare `/health.release.commit` with the expected Git commit and redeploy the latest `master` commit.
+
 Secrets are not baked into the image.
 
 ## Environment

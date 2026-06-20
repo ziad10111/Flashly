@@ -222,6 +222,7 @@ const main = async () => {
   runNpmScript("Runtime validation", "test:runtime-validation");
   runNpmScript("PostgreSQL TLS configuration", "test:postgres-config");
   runNpmScript("Storage readiness diagnostics", "test:storage-readiness");
+  runNpmScript("Server readiness route", "test:server-readiness-route");
   runNpmScript("RevenueCat webhook security", "smoke:billing");
 
   const backend = await checkBackendReachable();
