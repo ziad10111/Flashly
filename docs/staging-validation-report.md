@@ -1,91 +1,52 @@
-# Flashly Staging Validation Report
+# Final Staging Validation Result
 
-## Validation Metadata
+**Validation date:** 2026-06-20  
+**GitHub commit:** `eb0cf84`  
+**Command:** `npm run verify:staging`  
+**Result:** PASS  
+**Exit code:** 0
 
-- Validation date:
-- Validator:
-- Backend URL:
-- Deployment platform:
-- Container image/tag:
-- Backend git commit:
-- Backend version:
-- Android version:
-- Android version code:
-- Database migration version:
+## Validation Results
 
-## Configured Service Modes
+| Phase                               | Result |  Duration |
+| ----------------------------------- | -----: | --------: |
+| Health                              |   PASS |    587 ms |
+| Readiness                           |   PASS |  3,020 ms |
+| Authentication                      |   PASS |         — |
+| Direct upload                       |   PASS |  3,682 ms |
+| Invalid upload rejection            |   PASS |    250 ms |
+| Oversized upload rejection          |   PASS |    256 ms |
+| Chunk upload                        |   PASS |  2,383 ms |
+| Upload persistence                  |   PASS |    818 ms |
+| Cloud extraction from storageKey    |   PASS |  2,969 ms |
+| NVIDIA MCQ generation               |   PASS | 28,315 ms |
+| Deck and flashcard persistence      |   PASS |  1,358 ms |
+| Ownership isolation                 |   PASS |  1,174 ms |
+| Review session and progress         |   PASS |  4,791 ms |
+| RevenueCat webhook and subscription |   PASS |  2,098 ms |
+| Malformed JSON rejection            |   PASS |    253 ms |
+| Rate limiting                       |   PASS | 29,313 ms |
+| Security                            |   PASS |         — |
+| Overall                             |   PASS |         — |
 
-- `FLASHLY_ENV`:
-- `FLASHLY_DATA_MODE`:
-- `FLASHLY_STORAGE_MODE`:
-- `FLASHLY_STORAGE_PROVIDER`:
-- `EXPO_PUBLIC_FLASHLY_AUTH_MODE`:
-- `FLASHLY_EXTRACTION_MODE`:
-- `FLASHLY_OCR_PROVIDER`:
-- `FLASHLY_GENERATION_MODE`:
-- `FLASHLY_AI_PROVIDER`:
-- `FLASHLY_BILLING_MODE`:
-- `SENTRY_ENVIRONMENT`:
+## Release Decision
 
-## Automated Results
+The full real staging end-to-end validation passed successfully.
 
-- Health result:
-- Readiness result:
-- Database result:
-- Storage result:
-- Cloud extraction result:
-- Generation persistence result:
-- Ownership result:
-- Billing result:
-- Security result:
-- Staging E2E result:
-- Docker build result:
-- Docker run result:
-- `check:staging-deployment` result:
-- `verify:staging` exit code:
-- Staging smoke run id:
+Validated functionality includes:
 
-## Functional Results
+- Railway health and readiness
+- Clerk authentication
+- Direct and multipart uploads
+- Backblaze B2 cloud storage
+- Extraction using persisted `storageKey`
+- NVIDIA MCQ generation
+- PostgreSQL deck and flashcard persistence
+- Cross-user ownership protection
+- Review-session and progress persistence
+- RevenueCat webhook authentication and subscription persistence
+- Malformed JSON rejection
+- Rate limiting
+- Security behavior
 
-- Upload metadata persistence:
-- Chunk upload:
-- Chunk duplicate completion behavior:
-- Extraction from `storageKey`:
-- OCR fallback:
-- MCQ generation:
-- Progressive generation:
-- Deck persistence:
-- Flashcard persistence:
-- MCQ choices persisted:
-- `correctChoiceId` persisted:
-- Review persistence:
-- Progress persistence:
-- Subscription status:
-- Test data cleanup/manual cleanup id:
-
-## Manual Android Results
-
-- Fresh install:
-- Sign up:
-- Sign in:
-- Sign out:
-- Small PDF:
-- Scanned PDF:
-- Large PDF:
-- Poor network:
-- Upgrade screen:
-- Purchase:
-- Restore:
-
-## Known Limitations
-
-- Expo large-file upload still allocates file base64 before chunking.
-- Destructive staging cleanup is manual until safe test-only cleanup routes exist.
-
-## Final Decision
-
-- Pass/fail:
-- Approved for Google Play Internal Testing:
-- Required fixes before promotion:
-
-Do not include secrets, session tokens, uploaded document text, OCR output, or AI prompts in this report.
+Flashly is now ready to proceed with Google Play Internal Testing preparation.
