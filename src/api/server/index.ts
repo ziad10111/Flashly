@@ -40,6 +40,7 @@ import {
   type RuntimeValidationSection,
 } from "@/api/server/runtimeValidation";
 import { storageService } from "@/api/server/storage";
+import { checkCloudStorageReadiness } from "@/api/server/storage/readiness";
 
 initializeServerSentry();
 
@@ -285,57 +286,7 @@ async function checkMigrationReadiness(): Promise<ReadinessCheck> {
 }
 
 async function checkStorageReadiness(): Promise<ReadinessCheck> {
-  const readiness = storageService.validateReadiness();
-
-  if (!readiness.ok) {
-    return {
-      message: readiness.message,
-      status: "failed",
-    };
-  }
-
-  if (storageService.mode !== "cloud") {
-    return { status: "configured" };
-  }
-
-  if (!storageService.storeObject || !storageService.readObject || !storageService.deleteObject) {
-    return {
-      message: "Cloud storage must support write/read/delete readiness checks.",
-      status: "failed",
-    };
-  }
-
-  const storageKey = `readiness/${Date.now()}-${Math.random().toString(36).slice(2)}.txt`;
-  const textContent = `Flashly readiness ${new Date().toISOString()}`;
-
-  try {
-    await storageService.storeObject({
-      contentType: "text/plain",
-      fileName: "readiness.txt",
-      metadata: {
-        "flashly-readiness": "true",
-      },
-      sizeBytes: textContent.length,
-      storageKey,
-      textContent,
-    });
-    const stored = await storageService.readObject(storageKey);
-    await storageService.deleteObject(storageKey);
-
-    if (stored.textContent !== textContent) {
-      return {
-        message: "Cloud storage read-back content did not match write test.",
-        status: "failed",
-      };
-    }
-
-    return { status: "ok" };
-  } catch {
-    return {
-      message: "Cloud storage write/read/delete readiness check failed.",
-      status: "failed",
-    };
-  }
+  return checkCloudStorageReadiness(storageService);
 }
 
 async function readinessResponse() {

@@ -63,6 +63,7 @@ FLASHLY_S3_REGION=auto
 FLASHLY_S3_BUCKET=flashly-production-uploads
 FLASHLY_S3_ACCESS_KEY_ID=replace_me
 FLASHLY_S3_SECRET_ACCESS_KEY=replace_me
+FLASHLY_S3_FORCE_PATH_STYLE=true
 ```
 
 5. Optional: configure a public/custom domain and set:

@@ -134,7 +134,10 @@ Cloud storage must use:
 ```bash
 FLASHLY_STORAGE_MODE=cloud
 FLASHLY_STORAGE_PROVIDER=s3
+FLASHLY_S3_FORCE_PATH_STYLE=true
 ```
+
+`FLASHLY_S3_FORCE_PATH_STYLE` defaults to `true`, matching the runtime client and smoke scripts. Keep it enabled for most S3-compatible providers, including Cloudflare R2 and Backblaze B2, unless the provider specifically requires virtual-hosted-style addressing.
 
 Run:
 
@@ -221,7 +224,7 @@ Set `REVENUECAT_WEBHOOK_SECRET` in the backend. The staging smoke uses a synthet
 ## Troubleshooting
 
 - `/ready` fails database: check `DATABASE_URL`, network allowlist, and migrations.
-- `/ready` fails storage: check bucket name, endpoint, region, and access policy.
+- `/ready` fails storage: check the reported phase (`write`, `read`, `compare`, `delete`, or `missing-object-check`), then check bucket name, endpoint, region, path-style setting, and access policy.
 - staging smoke fails auth: refresh both Clerk session tokens and ensure they belong to different users.
 - generation fails: verify NVIDIA key/model/base URL and account access.
 - OCR fails only on scanned fixtures: verify OCR.space account quota and timeout.

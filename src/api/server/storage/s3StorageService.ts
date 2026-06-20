@@ -10,6 +10,7 @@ import {
   FLASHLY_S3_ACCESS_KEY_ID,
   FLASHLY_S3_BUCKET,
   FLASHLY_S3_ENDPOINT,
+  FLASHLY_S3_FORCE_PATH_STYLE,
   FLASHLY_S3_PUBLIC_BASE_URL,
   FLASHLY_S3_REGION,
   FLASHLY_S3_SECRET_ACCESS_KEY,
@@ -59,7 +60,7 @@ const getS3Client = () => {
       secretAccessKey: FLASHLY_S3_SECRET_ACCESS_KEY!,
     },
     endpoint: FLASHLY_S3_ENDPOINT,
-    forcePathStyle: true,
+    forcePathStyle: FLASHLY_S3_FORCE_PATH_STYLE,
     region: FLASHLY_S3_REGION,
   };
 

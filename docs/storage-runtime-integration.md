@@ -36,11 +36,14 @@ FLASHLY_S3_BUCKET=flashly-uploads
 FLASHLY_S3_ACCESS_KEY_ID=server_side_access_key
 FLASHLY_S3_SECRET_ACCESS_KEY=server_side_secret_key
 FLASHLY_S3_PUBLIC_BASE_URL=https://cdn.example.com # optional
+FLASHLY_S3_FORCE_PATH_STYLE=true # optional, defaults to true
 ```
 
 Legacy `FLASHLY_STORAGE_MODE=external` also resolves to cloud mode for compatibility.
 
 All S3 credentials are server-only. Do not prefix them with `EXPO_PUBLIC_`.
+
+`FLASHLY_S3_FORCE_PATH_STYLE` controls how the S3-compatible client addresses objects. Flashly defaults to `true`, which preserves the existing path-style behavior and is commonly needed for S3-compatible providers such as Cloudflare R2 and Backblaze B2. Set it to `false` only when your provider requires virtual-hosted-style bucket addressing.
 
 ## What Cloud Mode Does
 
@@ -71,6 +74,22 @@ Large PDF uploads still follow the existing chunk flow:
 This keeps progressive generation and OCR behavior unchanged while adding durable production storage.
 
 This is not yet a true S3 multipart upload. The backend still receives chunk payloads and assembles them once before writing to cloud storage. That is acceptable for the current 50 MB limit, but direct multipart upload/resume support remains a future scaling improvement.
+
+## Readiness Diagnostics
+
+The backend `/ready` check performs a small cloud storage lifecycle test in separate safe phases:
+
+```text
+write -> read -> compare -> delete -> missing-object-check
+```
+
+When a phase fails, the public readiness response stays safe and only names the phase, for example:
+
+```text
+Cloud storage readiness failed during delete.
+```
+
+The server log includes sanitized diagnostic fields only: failed phase, provider error name/code, HTTP status code, request id, and a redacted message. It never logs access keys, secret keys, authorization headers, signed URLs, object contents, or environment variable values.
 
 ## Smoke Test
 

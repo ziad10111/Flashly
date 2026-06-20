@@ -41,6 +41,9 @@ const loadDotEnv = () => {
 
 const envValue = (key) => process.env[key]?.trim();
 
+const getForcePathStyle = () =>
+  envValue("FLASHLY_S3_FORCE_PATH_STYLE")?.toLowerCase() === "false" ? false : true;
+
 const requiredPresence = [
   "EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY",
   "CLERK_SECRET_KEY",
@@ -154,7 +157,7 @@ const checkS3 = async () => {
       secretAccessKey: envValue("FLASHLY_S3_SECRET_ACCESS_KEY"),
     },
     endpoint: envValue("FLASHLY_S3_ENDPOINT"),
-    forcePathStyle: true,
+    forcePathStyle: getForcePathStyle(),
     region: envValue("FLASHLY_S3_REGION"),
   });
 

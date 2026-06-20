@@ -41,6 +41,9 @@ export const FLASHLY_S3_SECRET_ACCESS_KEY = process.env.FLASHLY_S3_SECRET_ACCESS
 
 export const FLASHLY_S3_PUBLIC_BASE_URL = process.env.FLASHLY_S3_PUBLIC_BASE_URL?.trim();
 
+export const FLASHLY_S3_FORCE_PATH_STYLE =
+  process.env.FLASHLY_S3_FORCE_PATH_STYLE?.trim().toLowerCase() === "false" ? false : true;
+
 export const FLASHLY_AI_PROVIDER = process.env.FLASHLY_AI_PROVIDER?.trim();
 
 export const FLASHLY_AI_API_KEY = process.env.FLASHLY_AI_API_KEY?.trim();

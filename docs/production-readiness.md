@@ -40,6 +40,7 @@ FLASHLY_S3_REGION=s3_region
 FLASHLY_S3_BUCKET=bucket_name
 FLASHLY_S3_ACCESS_KEY_ID=server_side_access_key
 FLASHLY_S3_SECRET_ACCESS_KEY=server_side_secret_key
+FLASHLY_S3_FORCE_PATH_STYLE=true
 FLASHLY_AI_API_KEY=server_side_nvidia_key
 FLASHLY_AI_MODEL=openai/gpt-oss-20b
 FLASHLY_AI_BASE_URL=https://integrate.api.nvidia.com/v1
@@ -103,6 +104,8 @@ The verifier checks:
 It prints `PASS` or `FAIL` per section, lists missing or misconfigured variables, and exits non-zero if Flashly is not production-ready.
 
 The script intentionally does not print API keys, database URLs, or storage secrets.
+
+Backend `/ready` performs a separate storage lifecycle check for `write`, `read`, `compare`, `delete`, and `missing-object-check`. Public responses only name the failed phase. Server logs include sanitized provider metadata and never include object contents, storage secrets, authorization headers, or signed URLs.
 
 ## Verify Staging
 

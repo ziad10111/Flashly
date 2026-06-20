@@ -49,6 +49,9 @@ const requireEnv = (key) => {
   return value;
 };
 
+const getForcePathStyle = () =>
+  process.env.FLASHLY_S3_FORCE_PATH_STYLE?.trim().toLowerCase() === "false" ? false : true;
+
 const streamToBuffer = async (body) => {
   if (!body) {
     return Buffer.alloc(0);
@@ -169,7 +172,7 @@ const main = async () => {
       secretAccessKey,
     },
     endpoint,
-    forcePathStyle: true,
+    forcePathStyle: getForcePathStyle(),
     region,
   });
 
@@ -200,8 +203,7 @@ const main = async () => {
   console.info(
     JSON.stringify(
       {
-        bucket,
-        endpoint,
+        forcePathStyle: getForcePathStyle(),
         objects: [textResult, binaryResult],
         provider,
         region,
