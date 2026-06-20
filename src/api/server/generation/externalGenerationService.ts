@@ -237,7 +237,7 @@ const callConfiguredAiProviderWithRetry = async (
   input: PrepareGenerationInput,
   sourceText: string,
   promptOverride?: string,
-  attempts = 2,
+  attempts = 1,
 ) => {
   let lastError: unknown;
 
@@ -250,6 +250,14 @@ const callConfiguredAiProviderWithRetry = async (
         attempt,
         providerRetry: true,
       });
+
+      if (
+        attempt >= attempts ||
+        !(error instanceof GenerationServiceFailureError) ||
+        !error.retryable
+      ) {
+        throw error;
+      }
     }
   }
 

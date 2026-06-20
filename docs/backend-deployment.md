@@ -142,6 +142,7 @@ FLASHLY_AI_PROVIDER=nvidia
 FLASHLY_AI_API_KEY=...
 FLASHLY_AI_MODEL=openai/gpt-oss-20b
 FLASHLY_AI_BASE_URL=https://integrate.api.nvidia.com/v1
+FLASHLY_AI_REQUEST_TIMEOUT_MS=120000
 FLASHLY_OCR_PROVIDER=ocrspace
 FLASHLY_OCR_API_KEY=...
 FLASHLY_BILLING_MODE=revenuecat
@@ -271,6 +272,7 @@ Generation fails:
 
 - `FLASHLY_AI_PROVIDER` is not `nvidia`
 - NVIDIA key/model/base URL is missing or invalid
+- `FLASHLY_AI_REQUEST_TIMEOUT_MS` is too low for the configured model and prompt size
 - host egress to NVIDIA is blocked
 
 RevenueCat webhooks fail:

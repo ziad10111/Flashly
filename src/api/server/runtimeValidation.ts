@@ -5,6 +5,7 @@ import {
   FLASHLY_AI_BASE_URL,
   FLASHLY_AI_MODEL,
   FLASHLY_AI_PROVIDER,
+  FLASHLY_AI_REQUEST_TIMEOUT_MS,
   FLASHLY_AUTH_MODE,
   FLASHLY_BILLING_MODE,
   FLASHLY_DATA_MODE,
@@ -185,6 +186,28 @@ const validatePositiveInteger = (
   }
 };
 
+const validatePositiveIntegerRange = (
+  sections: Record<string, RuntimeValidationSection>,
+  sectionName: string,
+  key: string,
+  value: string | undefined,
+  options: { max: number; min: number },
+) => {
+  if (!value) {
+    return;
+  }
+
+  const numeric = Number(value);
+
+  if (!Number.isInteger(numeric) || numeric < options.min || numeric > options.max) {
+    addIssue(sections, sectionName, {
+      key,
+      message: `${key} must be an integer between ${options.min} and ${options.max}.`,
+      severity: "error",
+    });
+  }
+};
+
 const ensureSection = (sections: Record<string, RuntimeValidationSection>, sectionName: string) => {
   sections[sectionName] ??= { issues: [], status: "ok" };
 };
@@ -311,6 +334,20 @@ export const validateRuntimeEnvironment = (): RuntimeValidationResult => {
     requireValue(sections, "ai", "FLASHLY_AI_API_KEY", FLASHLY_AI_API_KEY);
     requireValue(sections, "ai", "FLASHLY_AI_MODEL", FLASHLY_AI_MODEL);
     validateUrl(sections, "ai", "FLASHLY_AI_BASE_URL", FLASHLY_AI_BASE_URL, { required: false });
+    validatePositiveIntegerRange(
+      sections,
+      "ai",
+      "FLASHLY_AI_REQUEST_TIMEOUT_MS",
+      process.env.FLASHLY_AI_REQUEST_TIMEOUT_MS,
+      { max: 300_000, min: 5_000 },
+    );
+    if (!Number.isInteger(FLASHLY_AI_REQUEST_TIMEOUT_MS) || FLASHLY_AI_REQUEST_TIMEOUT_MS < 5_000) {
+      addIssue(sections, "ai", {
+        key: "FLASHLY_AI_REQUEST_TIMEOUT_MS",
+        message: "FLASHLY_AI_REQUEST_TIMEOUT_MS must be a valid external AI request timeout.",
+        severity: "error",
+      });
+    }
   } else if (strict) {
     addIssue(sections, "ai", {
       key: "FLASHLY_GENERATION_MODE",

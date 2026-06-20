@@ -40,6 +40,7 @@ import {
   type RuntimeValidationSection,
 } from "@/api/server/runtimeValidation";
 import { formatReleaseForLog, getReleaseMetadata } from "@/api/server/releaseMetadata";
+import { runWithRequestContext } from "@/api/server/requestContext";
 import { storageService } from "@/api/server/storage";
 import { checkCloudStorageReadiness } from "@/api/server/storage/readiness";
 
@@ -324,7 +325,8 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse)
   const requestId = createRequestId();
   const origin = typeof request.headers.origin === "string" ? request.headers.origin : undefined;
 
-  try {
+  await runWithRequestContext({ requestId }, async () => {
+    try {
     const url = new URL(request.url || "/", `http://${request.headers.host || "localhost"}`);
     const method = (request.method || "GET").toUpperCase();
     const allowedOrigin = getAllowedCorsOrigin(origin);
@@ -464,38 +466,39 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse)
       });
     }
     await sendResponse(response, fetchResponse, origin, requestId);
-  } catch (error) {
-    logSecurityEvent("error", error instanceof Error ? error.message : "Unexpected server error.", {
-      requestId,
-      routeBucket: "general",
-    });
-    captureBackendException(error, {
-      requestId,
-      routeBucket: "general",
-    });
-    await sendResponse(
-      response,
-      jsonResponse(
-        {
-          error: {
-            code: error instanceof Error && error.name === "PayloadTooLargeError" ? "validation-error" : "internal",
-            message:
-              error instanceof Error && error.name === "PayloadTooLargeError"
-                ? "Request body is too large."
-                : isProduction
-                  ? "An unexpected server error occurred."
-                  : error instanceof Error
-                    ? error.message
-                    : "Unexpected server error.",
-            requestId,
+    } catch (error) {
+      logSecurityEvent("error", error instanceof Error ? error.message : "Unexpected server error.", {
+        requestId,
+        routeBucket: "general",
+      });
+      captureBackendException(error, {
+        requestId,
+        routeBucket: "general",
+      });
+      await sendResponse(
+        response,
+        jsonResponse(
+          {
+            error: {
+              code: error instanceof Error && error.name === "PayloadTooLargeError" ? "validation-error" : "internal",
+              message:
+                error instanceof Error && error.name === "PayloadTooLargeError"
+                  ? "Request body is too large."
+                  : isProduction
+                    ? "An unexpected server error occurred."
+                    : error instanceof Error
+                      ? error.message
+                      : "Unexpected server error.",
+              requestId,
+            },
           },
-        },
-        { status: error instanceof Error && error.name === "PayloadTooLargeError" ? 413 : 500 },
-      ),
-      origin,
-      requestId,
-    );
-  }
+          { status: error instanceof Error && error.name === "PayloadTooLargeError" ? 413 : 500 },
+        ),
+        origin,
+        requestId,
+      );
+    }
+  });
 }
 
 createServer((request, response) => {

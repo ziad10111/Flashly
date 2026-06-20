@@ -31,6 +31,12 @@ export const jsonError = (status: number, code: ApiErrorCode, message: string, r
 };
 
 const statusByErrorCode: Record<ApiErrorCode, number> = {
+  "ai-provider-authentication": 500,
+  "ai-provider-authorization": 500,
+  "ai-provider-invalid-response": 502,
+  "ai-provider-rate-limited": 503,
+  "ai-provider-timeout": 504,
+  "ai-provider-upstream": 502,
   conflict: 409,
   forbidden: 403,
   internal: 500,
@@ -75,7 +81,7 @@ export const jsonRouteError = (error: unknown) => {
   }
 
   if (isGenerationServiceFailureError(error)) {
-    return jsonError(statusByErrorCode[error.code], error.code, error.message, error.retryable);
+    return jsonError(error.status ?? statusByErrorCode[error.code], error.code, error.message, error.retryable);
   }
 
   return jsonError(500, "internal", "An unexpected server error occurred.");

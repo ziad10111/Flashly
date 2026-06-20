@@ -44,6 +44,7 @@ FLASHLY_S3_FORCE_PATH_STYLE=true
 FLASHLY_AI_API_KEY=server_side_nvidia_key
 FLASHLY_AI_MODEL=openai/gpt-oss-20b
 FLASHLY_AI_BASE_URL=https://integrate.api.nvidia.com/v1
+FLASHLY_AI_REQUEST_TIMEOUT_MS=120000
 FLASHLY_OCR_API_KEY=server_side_ocr_space_key
 REVENUECAT_WEBHOOK_SECRET=shared_webhook_secret
 ```

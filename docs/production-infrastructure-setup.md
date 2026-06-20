@@ -114,9 +114,11 @@ FLASHLY_AI_PROVIDER=nvidia
 FLASHLY_AI_API_KEY=nvapi_replace_me
 FLASHLY_AI_MODEL=openai/gpt-oss-20b
 FLASHLY_AI_BASE_URL=https://integrate.api.nvidia.com/v1
+FLASHLY_AI_REQUEST_TIMEOUT_MS=120000
 ```
 
-3. `npm run verify:production` will make a small NVIDIA chat-completions request.
+3. `FLASHLY_AI_REQUEST_TIMEOUT_MS` defaults to 120000 ms and should stay high enough for first-batch MCQ generation.
+4. `npm run verify:production` will make a small NVIDIA chat-completions request.
 
 ## 5. OCR.space Setup
 

@@ -1,4 +1,10 @@
 export type ApiErrorCode =
+  | "ai-provider-authentication"
+  | "ai-provider-authorization"
+  | "ai-provider-invalid-response"
+  | "ai-provider-rate-limited"
+  | "ai-provider-timeout"
+  | "ai-provider-upstream"
   | "unauthorized"
   | "forbidden"
   | "not-found"

@@ -17,6 +17,7 @@ Object.assign(process.env, {
   FLASHLY_AI_BASE_URL: "https://integrate.api.nvidia.com/v1",
   FLASHLY_AI_MODEL: "openai/gpt-oss-20b",
   FLASHLY_AI_PROVIDER: "nvidia",
+  FLASHLY_AI_REQUEST_TIMEOUT_MS: "120000",
   FLASHLY_BILLING_MODE: "revenuecat",
   FLASHLY_DATA_MODE: "database",
   FLASHLY_ENV: "staging",
@@ -85,6 +86,18 @@ const main = async () => {
 
   const result = validateRuntimeEnvironment();
   assert(result.ok, `Expected realistic staging values to pass runtime validation: ${JSON.stringify(result.sections)}`);
+
+  process.env.FLASHLY_AI_REQUEST_TIMEOUT_MS = "4999";
+  const lowTimeoutResult = validateRuntimeEnvironment();
+  assert(!lowTimeoutResult.ok, "Expected too-low FLASHLY_AI_REQUEST_TIMEOUT_MS to fail runtime validation.");
+
+  process.env.FLASHLY_AI_REQUEST_TIMEOUT_MS = "300001";
+  const highTimeoutResult = validateRuntimeEnvironment();
+  assert(!highTimeoutResult.ok, "Expected too-high FLASHLY_AI_REQUEST_TIMEOUT_MS to fail runtime validation.");
+
+  process.env.FLASHLY_AI_REQUEST_TIMEOUT_MS = "not-a-number";
+  const invalidTimeoutResult = validateRuntimeEnvironment();
+  assert(!invalidTimeoutResult.ok, "Expected invalid FLASHLY_AI_REQUEST_TIMEOUT_MS to fail runtime validation.");
 
   console.log("PASS runtime placeholder validation tests");
 };

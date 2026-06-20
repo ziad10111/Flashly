@@ -52,6 +52,20 @@ export const FLASHLY_AI_MODEL = process.env.FLASHLY_AI_MODEL?.trim();
 
 export const FLASHLY_AI_BASE_URL = process.env.FLASHLY_AI_BASE_URL?.trim();
 
+const parseAiRequestTimeoutMs = () => {
+  const raw = process.env.FLASHLY_AI_REQUEST_TIMEOUT_MS?.trim();
+
+  if (!raw) {
+    return 120_000;
+  }
+
+  const value = Number(raw);
+
+  return Number.isInteger(value) && value > 0 ? value : 120_000;
+};
+
+export const FLASHLY_AI_REQUEST_TIMEOUT_MS = parseAiRequestTimeoutMs();
+
 export const FLASHLY_OCR_PROVIDER = process.env.FLASHLY_OCR_PROVIDER?.trim();
 
 export const FLASHLY_OCR_API_KEY = process.env.FLASHLY_OCR_API_KEY?.trim();

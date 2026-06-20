@@ -6,6 +6,7 @@ const {
   createStaticTokenProvider,
   decodeJwtSub,
 } = require("./staging-clerk-token-provider");
+const { formatStagingSmokeReport } = require("./staging-smoke-report");
 
 const repoRoot = path.resolve(__dirname, "..");
 const envPath = path.join(repoRoot, ".env");
@@ -125,33 +126,7 @@ const runStep = async (category, name, action) => {
 };
 
 const printReport = () => {
-  const categories = [
-    ["Health", "health"],
-    ["Readiness", "readiness"],
-    ["Authentication", "auth"],
-    ["Direct upload", "upload"],
-    ["Chunk upload", "chunk"],
-    ["Cloud extraction", "extraction"],
-    ["Generation", "generation"],
-    ["Database persistence", "persistence"],
-    ["Ownership", "ownership"],
-    ["Review/progress", "review"],
-    ["RevenueCat", "billing"],
-    ["Security", "security"],
-  ];
-
-  console.log("");
-  console.log("Staging validation report");
-  console.log("=========================");
-
-  for (const [label, category] of categories) {
-    const related = stepResults.filter((step) => step.category === category);
-    const status = related.length > 0 && related.every((step) => step.status === "PASS") ? "PASS" : "FAIL";
-    console.log(`${label}: ${status}`);
-  }
-
-  const failed = stepResults.filter((step) => step.status === "FAIL");
-  console.log(`Overall: ${failed.length === 0 ? "PASS" : "FAIL"}`);
+  console.log(formatStagingSmokeReport(stepResults));
 };
 
 const poll = async (action, predicate, { intervalMs = 1500, timeoutMs = 90_000 } = {}) => {

@@ -12,6 +12,7 @@ import type {
   CreateGenerationJobInput,
   ServerMaterialRepository,
 } from "../types";
+import { isGenerationServiceFailureError } from "../../generation";
 import { ensureDatabaseUser, toIsoString, withDatabaseTransaction } from "./utils";
 import { mapFlashcardRowToDTO } from "./databaseDeckRepository";
 
@@ -468,6 +469,9 @@ const updateDeckCardCount = async (client: PoolClient, userId: string, deckId: s
 const getErrorMessage = (error: unknown) =>
   error instanceof Error ? error.message : typeof error === "string" ? error : "Generation failed.";
 
+const getErrorCode = (error: unknown) =>
+  isGenerationServiceFailureError(error) ? error.code : "processing-failed";
+
 export const databaseMaterialRepository: ServerMaterialRepository = {
   createGenerationJob: (input, context) =>
     withDatabaseTransaction("materials.createGenerationJob", async (client) => {
@@ -501,30 +505,31 @@ export const databaseMaterialRepository: ServerMaterialRepository = {
       }
 
       const message = getErrorMessage(input.error);
+      const errorCode = getErrorCode(input.error);
       await createOrUpdateGenerationJob(client, user.id, input);
       await client.query(
         `
           UPDATE generation_jobs
           SET status = 'failed',
               stage = 'failed',
-              error_code = 'processing-failed',
+              error_code = $5,
               error_message = $4,
               last_error_message = $4,
               updated_at = now()
           WHERE user_id = $1 AND material_id = $2 AND idempotency_key = $3
         `,
-        [user.id, input.materialId, input.metadata.idempotencyKey, message],
+        [user.id, input.materialId, input.metadata.idempotencyKey, message, errorCode],
       );
       await client.query(
         `
           UPDATE uploads
           SET status = 'failed',
-              error_code = 'processing-failed',
+              error_code = $4,
               error_message = $3,
               updated_at = now()
           WHERE material_id = $1 AND user_id = $2
         `,
-        [input.materialId, user.id, message],
+        [input.materialId, user.id, message, errorCode],
       );
     }),
   persistExtractionResult: (input, context) =>

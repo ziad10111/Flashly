@@ -240,7 +240,7 @@ Set `REVENUECAT_WEBHOOK_SECRET` in the backend. The staging smoke uses a synthet
 - `/ready` fails database: check `DATABASE_URL`, network allowlist, and migrations.
 - `/ready` fails storage: check the reported phase (`write`, `read`, `compare`, `delete`, or `missing-object-check`), then check bucket name, endpoint, region, path-style setting, and access policy.
 - staging smoke fails auth: refresh both Clerk session tokens and ensure they belong to different users.
-- generation fails: verify NVIDIA key/model/base URL and account access.
+- generation fails: check the safe API error code (`ai-provider-timeout`, `ai-provider-rate-limited`, `ai-provider-upstream`, `ai-provider-authentication`, `ai-provider-authorization`, or `ai-provider-invalid-response`), then verify NVIDIA key/model/base URL, `FLASHLY_AI_REQUEST_TIMEOUT_MS`, account access, and host egress.
 - OCR fails only on scanned fixtures: verify OCR.space account quota and timeout.
 - rate limit check fails: set `FLASHLY_STAGING_RATE_LIMIT_ATTEMPTS` above the configured general limit.
 

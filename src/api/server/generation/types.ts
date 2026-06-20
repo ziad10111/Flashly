@@ -93,12 +93,24 @@ export const isGenerationServiceNotConfiguredError = (
 
 export class GenerationServiceFailureError extends Error {
   code: ApiErrorCode;
+  providerCategory?: string;
+  status?: number;
   retryable: boolean;
 
-  constructor(code: ApiErrorCode, message: string, retryable = false) {
+  constructor(
+    code: ApiErrorCode,
+    message: string,
+    retryable = false,
+    options?: {
+      providerCategory?: string;
+      status?: number;
+    },
+  ) {
     super(message);
     this.name = "GenerationServiceFailureError";
     this.code = code;
+    this.providerCategory = options?.providerCategory;
+    this.status = options?.status;
     this.retryable = retryable;
   }
 }
