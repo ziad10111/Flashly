@@ -25,7 +25,10 @@
       ],
       "package": "com.flashly.app",
       "predictiveBackGestureEnabled": false,
-      "versionCode": 1
+      "versionCode": 1,
+      "permissions": [
+        "android.permission.MODIFY_AUDIO_SETTINGS"
+      ]
     },
     "web": {
       "bundler": "metro",
@@ -57,11 +60,19 @@
         }
       ],
       "expo-font",
-      "expo-image"
+      "expo-image",
+      "expo-asset",
+      "@sentry/react-native"
     ],
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "55ad5745-77fd-40e0-91ad-6f37e4efec88"
+      }
     }
   }
 }
