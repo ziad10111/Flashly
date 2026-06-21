@@ -417,10 +417,14 @@ export default function DeckDetailScreen() {
           style: "destructive",
           text: "Delete",
           onPress: async () => {
-            await deleteDeck(deck.id);
-            clearAssistantConversation(deck.id);
-            setActiveDeckId("");
-            router.replace("/decks" as never);
+            try {
+              await deleteDeck(deck.id);
+              clearAssistantConversation(deck.id);
+              setActiveDeckId("");
+              router.replace("/decks" as never);
+            } catch {
+              Alert.alert("Could not delete deck", "Flashly could not delete this deck. Please try again.");
+            }
           },
         },
       ],

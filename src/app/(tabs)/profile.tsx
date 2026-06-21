@@ -1,10 +1,11 @@
 import { useClerk, useUser } from "@clerk/expo";
 import { Image } from "expo-image";
+import * as ImagePicker from "expo-image-picker";
 import { SymbolView, type AndroidSymbol, type SFSymbol } from "expo-symbols";
 import semiBold from "expo-symbols/androidWeights/semiBold";
 import { router } from "expo-router";
-import { useMemo } from "react";
-import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from "react-native";
+import { useMemo, useState } from "react";
+import { ActivityIndicator, Alert, ScrollView, StyleSheet, Text, View } from "react-native";
 import Animated, { FadeInDown } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -25,6 +26,11 @@ type StatCardProps = {
   icon: ProfileSymbol;
   label: string;
   value: string;
+};
+
+type ClerkUserWithProfileImage = {
+  reload?: () => Promise<unknown>;
+  setProfileImage?: (input: { file: { name: string; type: string; uri: string } | Blob }) => Promise<unknown>;
 };
 
 function ProfileIcon({
@@ -87,6 +93,22 @@ function StatCard({ accent, fallback, icon, label, value }: StatCardProps) {
   );
 }
 
+function getAchievementProgress(label: string, earned: boolean, totals: { dailyStreak: number; reviewedCards: number; totalDecks: number; totalXp: number }) {
+  if (label === "First Deck") {
+    return { current: Math.min(totals.totalDecks, 1), target: 1, text: `${Math.min(totals.totalDecks, 1)} / 1 deck` };
+  }
+
+  if (label === "100 XP") {
+    return { current: Math.min(totals.totalXp, 100), target: 100, text: `${Math.min(totals.totalXp, 100)} / 100 XP` };
+  }
+
+  if (label === "7 Day Streak") {
+    return { current: Math.min(totals.dailyStreak, 7), target: 7, text: `${Math.min(totals.dailyStreak, 7)} / 7 days` };
+  }
+
+  return { current: Math.min(totals.reviewedCards, 100), target: 100, text: `${Math.min(totals.reviewedCards, 100)} / 100 cards` };
+}
+
 function getInitials(name?: string | null) {
   if (!name) {
     return "FL";
@@ -104,6 +126,9 @@ export default function ProfileTabScreen() {
   const { user } = useUser();
   const { signOut } = useClerk();
   const insets = useSafeAreaInsets();
+  const [avatarUri, setAvatarUri] = useState<string | null>(null);
+  const [avatarStatus, setAvatarStatus] = useState<"idle" | "uploading">("idle");
+  const [avatarMessage, setAvatarMessage] = useState<string | null>(null);
   const reviewSessionHistory = useFlashlyProgressStore((state) => state.reviewSessionHistory);
   const { decks, errorMessage, progress, status } = useFlashlyDecks();
   const displayName = user?.fullName ?? user?.firstName ?? "Flashly Student";
@@ -149,6 +174,7 @@ export default function ProfileTabScreen() {
     reviewSessionHistory.length > 0
       ? `${reviewSessionHistory.length} review ${reviewSessionHistory.length === 1 ? "session is" : "sessions are"} saved on this device.`
       : "Start a review to build your streak and fill this history.";
+  const profileImageUri = avatarUri ?? user?.imageUrl ?? null;
   const contentStyle = useMemo(
     () => ({
       gap: 14,
@@ -212,6 +238,89 @@ export default function ProfileTabScreen() {
     router.replace("/onboarding");
   };
 
+  const uploadAvatarToClerk = async (asset: ImagePicker.ImagePickerAsset) => {
+    const clerkUser = user as ClerkUserWithProfileImage | null | undefined;
+
+    if (!clerkUser?.setProfileImage) {
+      setAvatarUri(asset.uri);
+      setAvatarMessage("Profile photo updated on this device. Cloud avatar upload is not available in this build.");
+      return;
+    }
+
+    await clerkUser.setProfileImage({
+      file: {
+        name: asset.fileName ?? "flashly-avatar.jpg",
+        type: asset.mimeType ?? "image/jpeg",
+        uri: asset.uri,
+      },
+    });
+    await clerkUser.reload?.();
+    setAvatarUri(asset.uri);
+    setAvatarMessage("Profile photo updated.");
+  };
+
+  const pickAvatar = async (source: "camera" | "library") => {
+    setAvatarMessage(null);
+    const permission =
+      source === "camera"
+        ? await ImagePicker.requestCameraPermissionsAsync()
+        : await ImagePicker.requestMediaLibraryPermissionsAsync();
+
+    if (!permission.granted) {
+      Alert.alert(
+        source === "camera" ? "Camera permission needed" : "Photo permission needed",
+        source === "camera"
+          ? "Allow camera access to take a profile photo."
+          : "Allow photo library access to choose a profile photo.",
+      );
+      return;
+    }
+
+    const result =
+      source === "camera"
+        ? await ImagePicker.launchCameraAsync({
+            allowsEditing: true,
+            aspect: [1, 1],
+            mediaTypes: ["images"],
+            quality: 0.82,
+          })
+        : await ImagePicker.launchImageLibraryAsync({
+            allowsEditing: true,
+            aspect: [1, 1],
+            mediaTypes: ["images"],
+            quality: 0.82,
+          });
+
+    if (result.canceled || !result.assets[0]) {
+      return;
+    }
+
+    setAvatarStatus("uploading");
+
+    try {
+      await uploadAvatarToClerk(result.assets[0]);
+    } catch {
+      Alert.alert("Could not update photo", "Flashly could not save this profile photo. Please try another image.");
+      setAvatarMessage("Profile photo upload failed.");
+    } finally {
+      setAvatarStatus("idle");
+    }
+  };
+
+  const removeAvatar = async () => {
+    setAvatarUri(null);
+    setAvatarMessage("Profile photo removed on this device.");
+  };
+
+  const handleAvatarPress = () => {
+    Alert.alert("Profile photo", "Choose how you want to update your avatar.", [
+      { text: "Take Photo", onPress: () => void pickAvatar("camera") },
+      { text: "Choose From Gallery", onPress: () => void pickAvatar("library") },
+      { style: "destructive", text: "Remove Photo", onPress: () => void removeAvatar() },
+      { style: "cancel", text: "Cancel" },
+    ]);
+  };
+
   if (status === "loading") {
     return (
       <View className="flex-1 items-center justify-center bg-lingua-background px-6">
@@ -230,30 +339,24 @@ export default function ProfileTabScreen() {
       contentContainerStyle={contentStyle}
       showsVerticalScrollIndicator={false}
     >
-      <Animated.View entering={FadeInDown.duration(220)} className="overflow-hidden rounded-[30px] bg-lingua-purple p-5 shadow-card" style={{ borderCurve: "continuous" }}>
-        <View className="mb-4">
-          <View className="mb-2 self-start rounded-full bg-white/15 px-4 py-2">
-            <Text selectable className="font-poppins-semibold text-[12px] leading-[16px] text-white">
-              Learner profile
-            </Text>
-          </View>
-          <Text selectable className="font-poppins-bold text-[28px] leading-[34px] text-white">
-            {displayName}
-          </Text>
-          <Text selectable className="mt-1 text-[14px] leading-[21px] text-[#EAE4FF]">
-            Level {level} learner - {totalXp} XP
-          </Text>
-        </View>
+      <Animated.View entering={FadeInDown.duration(220)} className="overflow-hidden rounded-[28px] bg-lingua-purple p-4 shadow-card" style={{ borderCurve: "continuous" }}>
         <View className="flex-row items-center">
-          <View className="h-16 w-16 items-center justify-center overflow-hidden rounded-full bg-white/20">
-            {user?.imageUrl ? (
-              <Image source={user.imageUrl} style={{ height: 64, width: 64 }} contentFit="cover" />
+          <PressableScale className="h-[76px] w-[76px] items-center justify-center overflow-hidden rounded-full bg-white/20" haptic onPress={handleAvatarPress}>
+            {profileImageUri ? (
+              <Image source={profileImageUri} style={{ height: 76, width: 76 }} contentFit="cover" />
             ) : (
               <Text selectable={false} className="font-poppins-bold text-[20px] leading-[24px] text-white">
                 {getInitials(displayName)}
               </Text>
             )}
-          </View>
+            <View className="absolute bottom-0 right-0 h-7 w-7 items-center justify-center rounded-full bg-white">
+              {avatarStatus === "uploading" ? (
+                <ActivityIndicator size="small" color="#6C4EF5" />
+              ) : (
+                <ProfileIcon accent="#6C4EF5" fallback="+" name={{ android: "photo_camera", ios: "camera.fill" }} size={16} />
+              )}
+            </View>
+          </PressableScale>
           <View className="ml-4 flex-1">
             <Text selectable className="font-poppins-bold text-[25px] leading-[32px] text-white">
               {displayName}
@@ -261,30 +364,19 @@ export default function ProfileTabScreen() {
             <Text selectable className="mt-1 text-[14px] leading-[21px] text-[#EAE4FF]">
               {email}
             </Text>
-          </View>
-        </View>
-        <View className="mt-4 flex-row flex-wrap gap-2">
-          <View className="rounded-full bg-white/15 px-4 py-2">
-            <Text selectable className="font-poppins-semibold text-[12px] leading-[16px] text-white">
-              Level {level}
+            <Text selectable className="mt-2 font-poppins-semibold text-[13px] leading-[18px] text-white">
+              Level {level} - {totalXp} XP
             </Text>
-          </View>
-          <View className="rounded-full bg-white/15 px-4 py-2">
-            <Text selectable className="font-poppins-semibold text-[12px] leading-[16px] text-white">
-              {dailyStreak} day streak
-            </Text>
-          </View>
-          <View className="rounded-full bg-white/15 px-4 py-2">
-            <Text selectable className="font-poppins-semibold text-[12px] leading-[16px] text-white">
-              {totalDecks} decks
+            <Text selectable className="mt-1 text-[13px] leading-[18px] text-[#EAE4FF]">
+              {totalDecks} {totalDecks === 1 ? "Deck" : "Decks"} - {dailyStreak} Day Streak
             </Text>
           </View>
         </View>
 
-        <View className="mt-4 rounded-[22px] bg-white/15 p-3">
+        <View className="mt-3 rounded-[20px] bg-white/15 p-3">
           <View className="flex-row items-center justify-between">
             <Text selectable className="font-poppins-semibold text-[13px] leading-[18px] text-white">
-              Overall review progress
+              Progress
             </Text>
             <Text selectable className="font-poppins-bold text-[13px] leading-[18px] text-white">
               {Math.round(reviewCompletion * 100)}%
@@ -294,6 +386,11 @@ export default function ProfileTabScreen() {
             <View className="h-full rounded-full bg-white" style={{ width: `${reviewCompletion * 100}%` }} />
           </View>
         </View>
+        {avatarMessage ? (
+          <Text selectable className="mt-2 text-[12px] leading-[17px] text-[#EAE4FF]">
+            {avatarMessage}
+          </Text>
+        ) : null}
       </Animated.View>
 
       <Animated.View
@@ -348,9 +445,26 @@ export default function ProfileTabScreen() {
                   <Text selectable className={`mt-2 font-poppins-bold text-[14px] leading-[20px] ${achievement.earned ? "text-ink" : "text-muted"}`}>
                     {achievement.label}
                   </Text>
-                  <Text selectable className="mt-1 text-[12px] leading-[17px] text-muted">
-                    {achievement.earned ? "Earned" : "Locked"}
-                  </Text>
+                  {(() => {
+                    const achievementProgress = getAchievementProgress(achievement.label, achievement.earned, {
+                      dailyStreak,
+                      reviewedCards,
+                      totalDecks,
+                      totalXp,
+                    });
+                    const percent = Math.min(100, (achievementProgress.current / achievementProgress.target) * 100);
+
+                    return (
+                      <>
+                        <Text selectable className="mt-1 text-[12px] leading-[17px] text-muted">
+                          {achievement.earned ? "Earned" : achievementProgress.text}
+                        </Text>
+                        <View className="mt-2 h-2 overflow-hidden rounded-full bg-[#E8EAF4]">
+                          <View className="h-full rounded-full" style={{ backgroundColor: achievement.accent, width: `${percent}%` }} />
+                        </View>
+                      </>
+                    );
+                  })()}
                 </PressableScale>
               </Animated.View>
             ))}

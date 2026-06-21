@@ -29,3 +29,24 @@ export async function GET(request: Request, { id }: { id: string }) {
     return jsonRouteError(error);
   }
 }
+
+export async function DELETE(request: Request, { id }: { id: string }) {
+  const auth = await requireBackendAuth(request);
+
+  if (!auth.ok) {
+    return auth.response;
+  }
+
+  const access = await assertDeckAccess(auth.context, id);
+
+  if (!access.ok) {
+    return access.response;
+  }
+
+  try {
+    await deckRepository.deleteDeck(id, { userId: auth.context.userId });
+    return jsonSuccess({ ok: true });
+  } catch (error) {
+    return jsonRouteError(error);
+  }
+}

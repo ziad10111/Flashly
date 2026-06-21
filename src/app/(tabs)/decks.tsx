@@ -286,12 +286,16 @@ export default function DecksTabScreen() {
           style: "destructive",
           text: "Delete",
           onPress: async () => {
-            await deleteDeck(deck.id);
-            clearAssistantConversation(deck.id);
+            try {
+              await deleteDeck(deck.id);
+              clearAssistantConversation(deck.id);
 
-            if (activeDeckId === deck.id) {
-              const nextDeck = decks.find((item) => item.id !== deck.id);
-              setActiveDeckId(nextDeck?.id ?? "");
+              if (activeDeckId === deck.id) {
+                const nextDeck = decks.find((item) => item.id !== deck.id);
+                setActiveDeckId(nextDeck?.id ?? "");
+              }
+            } catch {
+              Alert.alert("Could not delete deck", "Flashly could not delete this deck. Please try again.");
             }
           },
         },

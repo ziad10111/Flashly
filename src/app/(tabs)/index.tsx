@@ -91,10 +91,8 @@ export default function HomeTabScreen() {
   const displayName = user?.firstName ?? user?.fullName ?? null;
   const greeting = getTimeGreeting(displayName);
   const initials = getInitials(user?.fullName ?? user?.primaryEmailAddress?.emailAddress ?? "Flashly");
-  const supportedTypes = selectedStudyType?.supportedFileTypes.map((type) => type.toUpperCase()).join(", ") ?? "PDF, images, and text files";
-  const ocrNote = selectedStudyType?.requiresOCR
-    ? "OCR will read image-based or handwritten content."
-    : "Flashly checks text first and uses OCR when needed.";
+  const materialFormats = selectedStudyType?.supportedFileTypes.slice(0, 2).map((type) => type.toUpperCase()).join(", ") ?? "PDF";
+  const materialCapability = selectedStudyType?.requiresOCR ? "OCR Ready" : "OCR Ready";
   const totalXp = progress?.totalXp ?? 0;
   const dailyStreak = progress?.dailyStreak ?? 0;
   const currentDeck =
@@ -149,13 +147,6 @@ export default function HomeTabScreen() {
       icon: { android: "target", ios: "target" } as HomeSymbol,
       onPress: () => (currentDeck ? router.push(`/review/${currentDeck.id}?mode=weak` as never) : router.push("/decks" as never)),
       title: "Weak",
-    },
-    {
-      color: "#8B5CF6",
-      detail: "Study help",
-      icon: { android: "auto_awesome", ios: "sparkles" } as HomeSymbol,
-      onPress: () => router.push(currentDeck ? (`/ai-chat?deckId=${currentDeck.id}` as never) : ("/ai-chat" as never)),
-      title: "Assistant",
     },
   ];
   const contentStyle = useMemo(
@@ -284,7 +275,13 @@ export default function HomeTabScreen() {
         </View>
       </Animated.View>
 
-      <Animated.View entering={FadeInDown.delay(180).duration(220)} className="rounded-[28px] border border-[#ECEEFA] bg-white p-4 shadow-card">
+      <Animated.View entering={FadeInDown.delay(180).duration(220)}>
+        <PressableScale
+          className="rounded-[24px] border border-[#ECEEFA] bg-white p-3 shadow-card"
+          haptic
+          onPress={() => router.push("/upload" as never)}
+          pressedScale={0.98}
+        >
         <View className="flex-row items-center">
           <SmallIcon color="#7A54FF" icon={{ android: "menu_book", ios: "book.closed.fill" }} label="M" tint="#F5F0FF" />
           <View className="ml-4 flex-1">
@@ -294,26 +291,15 @@ export default function HomeTabScreen() {
             <Text selectable className="mt-1 font-poppins-bold text-[21px] leading-[27px] text-ink">
               {selectedStudyType?.title ?? "Study material"}
             </Text>
+            <Text selectable className="mt-1 font-poppins-semibold text-[13px] leading-[18px] text-lingua-purple">
+              {materialFormats} - {materialCapability}
+            </Text>
           </View>
+          <Text selectable={false} className="font-poppins-bold text-[22px] leading-[26px] text-lingua-purple">
+            {">"}
+          </Text>
         </View>
-
-        <Text selectable className="mt-3 text-[14px] leading-[21px] text-[#667093]">
-          {selectedStudyType?.description ?? "Choose a study material to begin."}
-        </Text>
-
-        <View className="mt-4 flex-row flex-wrap gap-2">
-          {(selectedStudyType?.supportedFileTypes ?? []).map((type) => (
-            <View key={type} className="rounded-full bg-[#F3F5FF] px-4 py-2">
-              <Text selectable className="font-poppins-semibold text-[12px] leading-[16px] text-lingua-deep-purple">
-                {type.toUpperCase()}
-              </Text>
-            </View>
-          ))}
-        </View>
-
-        <Text selectable className="mt-3 text-[13px] leading-[20px] text-muted">
-          Supports {supportedTypes}. {ocrNote}
-        </Text>
+        </PressableScale>
       </Animated.View>
 
       <Animated.View entering={FadeInDown.delay(230).duration(220)} className="gap-2">

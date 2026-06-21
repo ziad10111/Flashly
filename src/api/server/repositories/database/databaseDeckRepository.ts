@@ -4,6 +4,18 @@ import type { ServerDeckRepository } from "../types";
 import { ensureDatabaseUser, toIsoString, withDatabaseRepositoryError } from "./utils";
 
 export const databaseDeckRepository: ServerDeckRepository = {
+  deleteDeck: (deckId, context) =>
+    withDatabaseRepositoryError("decks.deleteDeck", async () => {
+      const user = await ensureDatabaseUser(context?.userId ?? "mock-clerk-user-flashly");
+
+      await queryPostgres(
+        `
+          DELETE FROM decks
+          WHERE id = $1 AND user_id = $2
+        `,
+        [deckId, user.id],
+      );
+    }),
   getDeckById: (deckId, context) =>
     withDatabaseRepositoryError("decks.getDeckById", async () => {
       const user = await ensureDatabaseUser(context?.userId ?? "mock-clerk-user-flashly");

@@ -19,11 +19,6 @@ type TabVisual = {
 };
 
 const TAB_VISUALS: Record<string, TabVisual> = {
-  "ai-chat": {
-    activeGlyph: "\u2726",
-    inactiveGlyph: "\u2726",
-    label: "Assistant",
-  },
   decks: {
     activeGlyph: "\u25A4",
     inactiveGlyph: "\u25A4",

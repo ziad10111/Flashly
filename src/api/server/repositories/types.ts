@@ -102,6 +102,7 @@ export type ServerMaterialRepository = {
 };
 
 export type ServerDeckRepository = {
+  deleteDeck: (deckId: string, context?: ServerRepositoryContext) => MaybePromise<void>;
   getDeckById: (deckId: string, context?: ServerRepositoryContext) => MaybePromise<GetDeckResponse | null>;
   getDecks: (context?: ServerRepositoryContext) => MaybePromise<GetDecksResponse>;
 };

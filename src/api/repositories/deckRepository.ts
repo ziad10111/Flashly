@@ -1,4 +1,5 @@
 import { apiRequest } from "@/api/client";
+import { USE_BACKEND_API } from "@/api/config";
 import { getAllDecks, getDeckById as findLocalDeckById, getDeckCards } from "@/lib/deck-utils";
 import { useFlashlyProgressStore } from "@/store/useFlashlyProgressStore";
 import { useFlashlyUploadStore } from "@/store/useFlashlyUploadStore";
@@ -43,7 +44,9 @@ const getLocalDecks = async (): Promise<GetDecksResponse> => {
 
 const getBackendDecks = async (): Promise<GetDecksResponse> => {
   const backendResponse = await apiRequest<GetDecksResponse>("/api/decks");
-  return mergeDeckResponses(backendResponse, getLocalGeneratedDecks());
+  const deletedDeckIds = new Set(useFlashlyProgressStore.getState().deletedDeckIds);
+  const visibleBackendDecks = backendResponse.decks.filter((deck) => !deletedDeckIds.has(deck.id));
+  return mergeDeckResponses({ decks: visibleBackendDecks }, getLocalGeneratedDecks());
 };
 
 const getLocalDeckById = async (deckId: string): Promise<GetDeckResponse | null> => {
@@ -120,8 +123,32 @@ export const getCardsForDeck = async (deckId: string): Promise<FlashcardDTO[]> =
 
 export const deleteDeck = async (deckId: string): Promise<void> => {
   const uploadStore = useFlashlyUploadStore.getState();
-  const isGeneratedDeck = uploadStore.generatedDecks.some((deck) => deck.id === deckId);
+  const progressStore = useFlashlyProgressStore.getState();
+  const uploadSnapshot = {
+    generatedCardsByDeckId: uploadStore.generatedCardsByDeckId,
+    generatedDeckId: uploadStore.generatedDeckId,
+    generatedDecks: uploadStore.generatedDecks,
+  };
+  const progressSnapshot = {
+    completedDeckIds: progressStore.completedDeckIds,
+    deletedDeckIds: progressStore.deletedDeckIds,
+    deckProgressById: progressStore.deckProgressById,
+    reviewSessionHistory: progressStore.reviewSessionHistory,
+    totalXp: progressStore.totalXp,
+  };
 
   uploadStore.removeGeneratedDeck(deckId);
-  useFlashlyProgressStore.getState().deleteDeckProgress(deckId, { hideDeck: !isGeneratedDeck });
+  useFlashlyProgressStore.getState().deleteDeckProgress(deckId, { hideDeck: true });
+
+  if (!USE_BACKEND_API) {
+    return;
+  }
+
+  try {
+    await apiRequest<{ ok: true }>(`/api/decks/${encodeURIComponent(deckId)}`, { method: "DELETE" });
+  } catch (error) {
+    useFlashlyUploadStore.setState(uploadSnapshot);
+    useFlashlyProgressStore.setState(progressSnapshot);
+    throw error;
+  }
 };

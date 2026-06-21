@@ -41,7 +41,6 @@ export default function TabsLayout() {
       <Tabs.Screen name="index" options={{ title: "Home" }} />
       <Tabs.Screen name="upload" options={{ title: "Upload" }} />
       <Tabs.Screen name="decks" options={{ title: "Decks" }} />
-      <Tabs.Screen name="ai-chat" options={{ title: "Assistant" }} />
       <Tabs.Screen name="profile" options={{ title: "Profile" }} />
     </Tabs>
   );
