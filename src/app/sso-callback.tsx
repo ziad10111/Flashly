@@ -1,4 +1,5 @@
 import { Redirect } from "expo-router";
+import * as WebBrowser from "expo-web-browser";
 import { ActivityIndicator, Text, View } from "react-native";
 
 import { useAuth } from "@clerk/expo";
@@ -6,6 +7,8 @@ import { useAuth } from "@clerk/expo";
 import { FLASHLY_AUTH_MODE } from "@/api/config";
 import { useStudySelectionStore } from "@/store/useStudySelectionStore";
 import { colors } from "@/theme";
+
+WebBrowser.maybeCompleteAuthSession();
 
 export default function SsoCallbackScreen() {
   const { isLoaded, isSignedIn } = useAuth();

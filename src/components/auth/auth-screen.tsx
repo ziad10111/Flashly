@@ -1,21 +1,13 @@
-import { Image } from "expo-image";
 import { useAuth, useSSO, useSignIn, useSignUp } from "@clerk/expo";
+import { Image } from "expo-image";
 import { makeRedirectUri } from "expo-auth-session";
 import { Link, Redirect, router } from "expo-router";
 import * as WebBrowser from "expo-web-browser";
 import { useEffect, useEffectEvent, useState } from "react";
-import {
-  ActivityIndicator,
-  Pressable,
-  ScrollView,
-  Text,
-  TextInput,
-  View,
-  useWindowDimensions,
-} from "react-native";
+import { ActivityIndicator, Pressable, ScrollView, Text, TextInput, View, useWindowDimensions } from "react-native";
 
-import { VerificationCodeModal } from "@/components/auth/verification-code-modal";
 import { FLASHLY_AUTH_MODE } from "@/api/config";
+import { VerificationCodeModal } from "@/components/auth/verification-code-modal";
 import { safeBack } from "@/lib/navigation/safeBack";
 import { useStudySelectionStore } from "@/store/useStudySelectionStore";
 import { colors } from "@/theme";
@@ -28,78 +20,57 @@ type AuthScreenProps = {
 
 const socialProviders = [
   {
-    id: "oauth_google",
-    label: "Continue with Google",
     badge: "G",
     badgeColor: "#EA4335",
+    id: "oauth_google",
+    label: "Continue with Google",
   },
   {
-    id: "oauth_facebook",
-    label: "Continue with Facebook",
-    badge: "f",
-    badgeColor: "#1877F2",
-  },
-  {
-    id: "oauth_apple",
-    label: "Continue with Apple",
     badge: "\uF8FF",
     badgeColor: "#0D132B",
+    id: "oauth_apple",
+    iconSource: require("../../../assets/images/apple-logo.png"),
+    label: "Continue with Apple",
   },
 ] as const;
 
+type PendingVerification = "sign-up" | null;
+
 WebBrowser.maybeCompleteAuthSession();
 
-type PendingVerification = "sign-up" | "sign-in" | null;
-
-function Sparkle({
-  className,
-  color,
-  symbol,
-}: {
-  className: string;
-  color: string;
-  symbol: string;
-}) {
-  return (
-    <View className={`absolute ${className}`}>
-      <Text selectable style={{ color, fontSize: 30, lineHeight: 30 }}>
-        {symbol}
-      </Text>
-    </View>
-  );
-}
-
 function SocialButton({
-  label,
   badge,
   badgeColor,
-  onPress,
   disabled = false,
+  iconSource,
+  label,
+  onPress,
 }: {
-  label: string;
   badge: string;
   badgeColor: string;
-  onPress: () => void;
   disabled?: boolean;
+  iconSource?: number;
+  label: string;
+  onPress: () => void;
 }) {
   return (
     <Pressable
-      className={`mt-4 flex-row items-center rounded-[24px] border border-[#ECEEF5] bg-white px-7 py-5 shadow-card ${
+      className={`mt-3 flex-row items-center rounded-[18px] border border-[#ECEEF5] bg-white px-4 py-3 shadow-card ${
         disabled ? "opacity-60" : ""
       }`}
-      onPress={onPress}
       disabled={disabled}
+      onPress={onPress}
     >
-      <View className="h-12 w-12 items-center justify-center rounded-full bg-[#F8F9FD]">
-        <Text
-          selectable
-          className="font-poppins-semibold text-[30px] leading-[30px]"
-          style={{ color: badgeColor }}
-        >
-          {badge}
-        </Text>
+      <View className="h-10 w-10 items-center justify-center rounded-full bg-[#F8F9FD]">
+        {iconSource ? (
+          <Image contentFit="contain" source={iconSource} style={{ height: 22, width: 22 }} />
+        ) : (
+          <Text selectable={false} className="text-[25px] leading-[26px]" style={{ color: badgeColor, fontWeight: "700" }}>
+            {badge}
+          </Text>
+        )}
       </View>
-      <Text selectable className="ml-6 font-poppins-medium text-[18px] leading-[24px] text-ink">
+      <Text selectable className="ml-4 font-poppins-medium text-[15px] leading-[21px] text-ink">
         {label}
       </Text>
     </Pressable>
@@ -114,35 +85,28 @@ export function AuthScreen({ mode }: AuthScreenProps) {
   const hasHydrated = useStudySelectionStore((state) => state.hasHydrated);
   const selectedStudyType = useStudySelectionStore((state) => state.selectedStudyType);
   const { width } = useWindowDimensions();
-  const [email, setEmail] = useState(mode === "sign-up" ? "alex@gmail.com" : "alex@gmail.com");
-  const [password, setPassword] = useState("password");
-  const [isPasswordVisible, setIsPasswordVisible] = useState(false);
-  const [code, setCode] = useState("");
-  const [isVerificationVisible, setIsVerificationVisible] = useState(false);
-  const [pendingVerification, setPendingVerification] = useState<PendingVerification>(null);
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [isSubmitting, setIsSubmitting] = useState(false);
   const [activeSocialProvider, setActiveSocialProvider] = useState<string | null>(null);
+  const [code, setCode] = useState("");
+  const [email, setEmail] = useState("");
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [isPasswordVisible, setIsPasswordVisible] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isVerificationVisible, setIsVerificationVisible] = useState(false);
+  const [password, setPassword] = useState("");
+  const [pendingVerification, setPendingVerification] = useState<PendingVerification>(null);
 
   const isSignUp = mode === "sign-up";
-  const title = isSignUp ? "Create your account" : "Welcome back";
+  const title = isSignUp ? "Create your Flashly account" : "Welcome to Flashly";
   const primaryLabel = isSignUp ? "Sign Up" : "Sign In";
   const footerPrompt = isSignUp ? "Already have an account?" : "Need an account?";
   const footerAction = isSignUp ? "Log in" : "Sign up";
   const footerHref = isSignUp ? "/sign-in" : "/sign-up";
-  const panelWidth = Math.min(width - 28, 520);
-  const mascotWidth = Math.min(width * 0.56, 280);
+  const panelWidth = Math.min(width - 24, 500);
+  const mascotWidth = Math.min(width * 0.42, 168);
   const ssoRedirectUrl = makeRedirectUri({
-    scheme: "ocrapp",
     path: "sso-callback",
+    scheme: "flashly",
   });
-  const handleBackPress = () => safeBack("/onboarding");
-
-  const resetVerificationState = () => {
-    setCode("");
-    setPendingVerification(null);
-    setIsVerificationVisible(false);
-  };
 
   const formatClerkError = (error: unknown) => {
     if (!error || typeof error !== "object") {
@@ -195,13 +159,19 @@ export function AuthScreen({ mode }: AuthScreenProps) {
     });
   };
 
+  const resetVerificationState = () => {
+    setCode("");
+    setIsVerificationVisible(false);
+    setPendingVerification(null);
+  };
+
   const handlePrimaryPress = async () => {
-    if (!isLoaded) {
+    if (!isLoaded || isSubmitting) {
       return;
     }
 
-    setErrorMessage(null);
     setCode("");
+    setErrorMessage(null);
     setIsSubmitting(true);
 
     try {
@@ -226,64 +196,9 @@ export function AuthScreen({ mode }: AuthScreenProps) {
           setErrorMessage(formatClerkError(sendError));
           return;
         }
-      } else {
-        if (!signIn) {
-          return;
-        }
 
-        const { error: createError } = await signIn.create({
-          identifier: email.trim(),
-        });
-
-        if (createError) {
-          setErrorMessage(formatClerkError(createError));
-          return;
-        }
-
-        const { error: sendError } = await signIn.emailCode.sendCode();
-
-        if (sendError) {
-          setErrorMessage(formatClerkError(sendError));
-          return;
-        }
-      }
-
-      setPendingVerification(mode);
-      setIsVerificationVisible(true);
-    } catch (error) {
-      setErrorMessage(formatClerkError(error));
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  const handleVerifyCode = async () => {
-    if (!isLoaded || code.length !== 6 || !pendingVerification) {
-      return;
-    }
-
-    setErrorMessage(null);
-    setIsSubmitting(true);
-
-    try {
-      if (pendingVerification === "sign-up") {
-        if (!signUp) {
-          return;
-        }
-
-        const { error } = await signUp.verifications.verifyEmailCode({ code });
-
-        if (error) {
-          setErrorMessage(formatClerkError(error));
-          return;
-        }
-
-        if (signUp.status === "complete") {
-          await completeSignUp();
-          return;
-        }
-
-        setErrorMessage("We couldn't finish sign up yet. Please try again.");
+        setPendingVerification("sign-up");
+        setIsVerificationVisible(true);
         return;
       }
 
@@ -291,10 +206,13 @@ export function AuthScreen({ mode }: AuthScreenProps) {
         return;
       }
 
-      const { error } = await signIn.emailCode.verifyCode({ code });
+      const { error: createError } = await signIn.create({
+        identifier: email.trim(),
+        password,
+      });
 
-      if (error) {
-        setErrorMessage(formatClerkError(error));
+      if (createError) {
+        setErrorMessage(formatClerkError(createError));
         return;
       }
 
@@ -303,7 +221,36 @@ export function AuthScreen({ mode }: AuthScreenProps) {
         return;
       }
 
-      setErrorMessage("We couldn't finish sign in yet. Please try again.");
+      setErrorMessage("We couldn't finish sign in yet. Please check your credentials and try again.");
+    } catch (error) {
+      setErrorMessage(formatClerkError(error));
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleVerifyCode = async () => {
+    if (!isLoaded || code.length !== 6 || pendingVerification !== "sign-up" || !signUp) {
+      return;
+    }
+
+    setErrorMessage(null);
+    setIsSubmitting(true);
+
+    try {
+      const { error } = await signUp.verifications.verifyEmailCode({ code });
+
+      if (error) {
+        setErrorMessage(formatClerkError(error));
+        return;
+      }
+
+      if (signUp.status === "complete") {
+        await completeSignUp();
+        return;
+      }
+
+      setErrorMessage("We couldn't finish sign up yet. Please try again.");
     } catch (error) {
       setErrorMessage(formatClerkError(error));
     } finally {
@@ -312,25 +259,18 @@ export function AuthScreen({ mode }: AuthScreenProps) {
   };
 
   const handleResendCode = async () => {
-    if (!pendingVerification) {
+    if (pendingVerification !== "sign-up") {
       return;
     }
 
-    setErrorMessage(null);
     setCode("");
+    setErrorMessage(null);
     setIsSubmitting(true);
 
     try {
-      if (pendingVerification === "sign-up") {
-        const { error } = await signUp?.verifications.sendEmailCode() ?? {};
-        if (error) {
-          setErrorMessage(formatClerkError(error));
-        }
-      } else {
-        const { error } = await signIn?.emailCode.sendCode() ?? {};
-        if (error) {
-          setErrorMessage(formatClerkError(error));
-        }
+      const { error } = (await signUp?.verifications.sendEmailCode()) ?? {};
+      if (error) {
+        setErrorMessage(formatClerkError(error));
       }
     } catch (error) {
       setErrorMessage(formatClerkError(error));
@@ -340,13 +280,13 @@ export function AuthScreen({ mode }: AuthScreenProps) {
   };
 
   const handleSocialPress = async (strategy: (typeof socialProviders)[number]["id"]) => {
-    setErrorMessage(null);
     setActiveSocialProvider(strategy);
+    setErrorMessage(null);
 
     try {
       const { createdSessionId, setActive } = await startSSOFlow({
-        strategy,
         redirectUrl: ssoRedirectUrl,
+        strategy,
       });
 
       if (createdSessionId && setActive) {
@@ -402,106 +342,82 @@ export function AuthScreen({ mode }: AuthScreenProps) {
     <>
       <ScrollView
         className="bg-lingua-background"
-        contentInsetAdjustmentBehavior="automatic"
         contentContainerStyle={{
-          flexGrow: 1,
           alignItems: "center",
-          paddingHorizontal: 14,
-          paddingVertical: 16,
+          flexGrow: 1,
+          paddingHorizontal: 12,
+          paddingVertical: 12,
         }}
+        contentInsetAdjustmentBehavior="automatic"
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
-        <View
-          className="min-h-full rounded-[38px] bg-white px-7 pb-9 pt-6 shadow-card"
-          style={{ width: panelWidth }}
-        >
-          <Pressable
-            className="h-14 w-14 items-start justify-center rounded-full"
-            onPress={handleBackPress}
-          >
-            <Text selectable className="font-poppins text-[44px] leading-[44px] text-ink">
+        <View className="min-h-full rounded-[28px] bg-white px-5 pb-6 pt-4 shadow-card" style={{ width: panelWidth }}>
+          <Pressable className="h-10 w-10 items-start justify-center rounded-full" onPress={() => safeBack("/onboarding")}>
+            <Text selectable className="font-poppins text-[34px] leading-[36px] text-ink">
               {"\u2039"}
             </Text>
           </Pressable>
 
-          <Text
-            selectable
-            className="mt-7 max-w-[320px] font-poppins-bold text-[42px] leading-[50px] tracking-[-1.2px] text-ink"
-          >
-            {title}
-          </Text>
-
-          <Text selectable className="mt-4 text-[18px] leading-[30px] text-muted">
-            {isSignUp ? "Start your success journey today " : "Pick up right where you left off "}
-            <Text style={{ color: "#FF9D00" }}>✦</Text>
-          </Text>
-
-          <View className="relative mt-7 items-center justify-center pb-5 pt-3">
-            <Sparkle className="left-[22%] top-[32%]" color="#FF9D00" symbol="✦" />
-            <Sparkle className="left-[26%] top-[54%]" color="#FFD84D" symbol="✦" />
-            <Sparkle className="right-[21%] top-[40%]" color="#67A9FF" symbol="✦" />
-            <Sparkle className="right-[17%] top-[62%]" color="#FFD84D" symbol="✦" />
-
+          <View className="items-center">
             <Image
-              source={require("../../../assets/images/mascot-auth.png")}
-              style={{ width: mascotWidth, height: mascotWidth * 0.9 }}
               contentFit="contain"
+              source={require("../../../assets/images/mascot-auth.png")}
+              style={{ height: mascotWidth * 0.72, width: mascotWidth }}
             />
+            <Text selectable className="mt-2 text-center font-poppins-bold text-[27px] leading-[33px] text-ink">
+              {title}
+            </Text>
+            <Text selectable className="mt-1 text-center text-[14px] leading-[20px] text-muted">
+              {isSignUp ? "Create cards from any study material." : "Sign in and keep studying."}
+            </Text>
           </View>
 
-          <View className="rounded-[28px] border border-[#ECEEF5] bg-white px-6 py-6 shadow-card">
-            <Text selectable className="font-poppins text-[18px] leading-[24px] text-[#6A72A4]">
+          <View className="mt-5 rounded-[18px] border border-[#ECEEF5] bg-white px-4 py-3 shadow-card">
+            <Text selectable className="font-poppins text-[13px] leading-[18px] text-[#6A72A4]">
               Email
             </Text>
             <TextInput
-              value={email}
-              onChangeText={setEmail}
-              keyboardType="email-address"
               autoCapitalize="none"
               autoCorrect={false}
+              className="mt-1 min-h-[36px] py-0 font-poppins-medium text-[17px] leading-[22px] text-ink"
+              keyboardType="email-address"
+              onChangeText={setEmail}
               placeholder="Enter your email"
               placeholderTextColor="#9CA3AF"
-              className="mt-4 font-poppins-medium text-[22px] leading-[28px] text-ink"
+              value={email}
             />
           </View>
 
-          {isSignUp ? (
-            <View className="mt-5 rounded-[28px] border border-[#ECEEF5] bg-white px-6 py-6 shadow-card">
-              <Text selectable className="font-poppins text-[18px] leading-[24px] text-[#6A72A4]">
-                Password
-              </Text>
-
-              <View className="mt-4 flex-row items-center justify-between">
-                <TextInput
-                  value={password}
-                  onChangeText={setPassword}
-                  secureTextEntry={!isPasswordVisible}
-                  placeholder="Create a password"
-                  placeholderTextColor="#9CA3AF"
-                  className="flex-1 font-poppins-medium text-[22px] leading-[28px] text-ink"
-                />
-
-                <Pressable
-                  className="ml-4 h-12 w-12 items-center justify-center rounded-full"
-                  onPress={() => setIsPasswordVisible((current) => !current)}
-                >
-                  <Text selectable className="font-poppins text-[28px] leading-[28px] text-[#6A72A4]">
-                    {isPasswordVisible ? "◉" : "◌"}
-                  </Text>
-                </Pressable>
-              </View>
+          <View className="mt-3 rounded-[18px] border border-[#ECEEF5] bg-white px-4 py-3 shadow-card">
+            <Text selectable className="font-poppins text-[13px] leading-[18px] text-[#6A72A4]">
+              Password
+            </Text>
+            <View className="mt-1 flex-row items-center justify-between">
+              <TextInput
+                className="min-h-[36px] flex-1 py-0 font-poppins-medium text-[17px] leading-[22px] text-ink"
+                onChangeText={setPassword}
+                placeholder={isSignUp ? "Create a password" : "Enter your password"}
+                placeholderTextColor="#9CA3AF"
+                secureTextEntry={!isPasswordVisible}
+                value={password}
+              />
+              <Pressable className="ml-3 h-9 w-9 items-center justify-center rounded-full" onPress={() => setIsPasswordVisible((current) => !current)}>
+                <Text selectable={false} className="font-poppins text-[21px] leading-[22px] text-[#6A72A4]">
+                  {isPasswordVisible ? "\u25C9" : "\u25CB"}
+                </Text>
+              </Pressable>
             </View>
-          ) : null}
+          </View>
 
           <Pressable
-            className={`mt-7 items-center justify-center rounded-[28px] bg-lingua-purple px-6 py-6 shadow-card ${
+            className={`mt-5 items-center justify-center rounded-[20px] bg-lingua-purple px-5 py-4 shadow-card ${
               isSubmitting ? "opacity-70" : ""
             }`}
-            onPress={handlePrimaryPress}
             disabled={isSubmitting}
+            onPress={handlePrimaryPress}
           >
-            <Text selectable className="font-poppins-semibold text-[24px] leading-[30px] text-white">
+            <Text selectable={false} className="font-poppins-semibold text-[18px] leading-[24px] text-white">
               {primaryLabel}
             </Text>
           </Pressable>
@@ -512,9 +428,9 @@ export function AuthScreen({ mode }: AuthScreenProps) {
             </Text>
           ) : null}
 
-          <View className="mt-8 flex-row items-center gap-4">
+          <View className="mt-5 flex-row items-center gap-3">
             <View className="h-px flex-1 bg-[#E9EBF2]" />
-            <Text selectable className="font-poppins text-[16px] leading-[24px] text-muted">
+            <Text selectable className="font-poppins text-[13px] leading-[18px] text-muted">
               or continue with
             </Text>
             <View className="h-px flex-1 bg-[#E9EBF2]" />
@@ -523,21 +439,22 @@ export function AuthScreen({ mode }: AuthScreenProps) {
           {socialProviders.map((provider) => (
             <SocialButton
               key={provider.id}
-              label={provider.label}
               badge={provider.badge}
               badgeColor={provider.badgeColor}
-              onPress={() => handleSocialPress(provider.id)}
               disabled={activeSocialProvider !== null}
+              iconSource={"iconSource" in provider ? provider.iconSource : undefined}
+              label={provider.label}
+              onPress={() => handleSocialPress(provider.id)}
             />
           ))}
 
-          <View className="mt-9 flex-row items-center justify-center">
-            <Text selectable className="text-[16px] leading-[24px] text-muted">
+          <View className="mt-5 flex-row items-center justify-center">
+            <Text selectable className="text-[14px] leading-[20px] text-muted">
               {footerPrompt}{" "}
             </Text>
             <Link href={footerHref} asChild>
               <Pressable>
-                <Text selectable className="font-poppins-semibold text-[16px] leading-[24px] text-lingua-purple">
+                <Text selectable className="font-poppins-semibold text-[14px] leading-[20px] text-lingua-purple">
                   {footerAction}
                 </Text>
               </Pressable>
@@ -549,17 +466,17 @@ export function AuthScreen({ mode }: AuthScreenProps) {
       </ScrollView>
 
       <VerificationCodeModal
-        email={email}
-        isVisible={isVerificationVisible}
         code={code}
+        email={email}
         errorMessage={errorMessage}
         isSubmitting={isSubmitting}
+        isVisible={isVerificationVisible}
         onChangeCode={setCode}
-        onResend={handleResendCode}
         onClose={() => {
           resetVerificationState();
           setErrorMessage(null);
         }}
+        onResend={handleResendCode}
       />
     </>
   );
