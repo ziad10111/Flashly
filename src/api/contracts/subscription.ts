@@ -7,6 +7,16 @@ export type SubscriptionLimitsDTO = {
   maxUploadsPerMonth: number | "unlimited";
 };
 
+export type TrialStatusResponse = {
+  activeUsageDayCount: number;
+  expiresAt?: string;
+  isExpired: boolean;
+  lastActiveDate?: string;
+  maxActiveUsageDays: number;
+  remainingActiveUsageDays: number;
+  startedAt?: string;
+};
+
 export type SubscriptionStatusResponse = {
   entitlementSource: "mock" | "revenuecat" | "manual" | "none";
   limits: SubscriptionLimitsDTO;
@@ -14,4 +24,5 @@ export type SubscriptionStatusResponse = {
   planLabel: string;
   renewalOrExpirationDate?: string;
   status: SubscriptionStatusDTO | "none";
+  trial: TrialStatusResponse;
 };

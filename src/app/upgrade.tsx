@@ -33,6 +33,12 @@ const fallbackSubscription: SubscriptionStatusResponse = {
   planId: "free",
   planLabel: "Free",
   status: "none",
+  trial: {
+    activeUsageDayCount: 0,
+    isExpired: false,
+    maxActiveUsageDays: 3,
+    remainingActiveUsageDays: 3,
+  },
 };
 
 const getPackageLabel = (item: FlashlyRevenueCatPackage) => {
@@ -182,7 +188,8 @@ export default function UpgradeScreen() {
   };
 
   const benefits = [
-    `${formatMegabytes(50 * 1024 * 1024)} uploads for large PDFs`,
+    "Keep uploading and generating after your 3-day free trial",
+    `${formatMegabytes(50 * 1024 * 1024)} technical upload support for large PDFs`,
     "Much higher monthly card generation",
     "Room for thousands of study decks",
     "RevenueCat-backed Google Play subscriptions",
@@ -250,6 +257,9 @@ export default function UpgradeScreen() {
                   Renews or expires {new Date(subscription.renewalOrExpirationDate).toLocaleDateString()}
                 </Text>
               ) : null}
+              <Text selectable className="mt-3 text-[14px] leading-[21px] text-muted">
+                Trial: {subscription.trial.isExpired ? "complete" : `${subscription.trial.remainingActiveUsageDays} active day${subscription.trial.remainingActiveUsageDays === 1 ? "" : "s"} remaining`}
+              </Text>
             </>
           )}
         </View>
@@ -345,7 +355,9 @@ export default function UpgradeScreen() {
             Your current limits
           </Text>
           <Text selectable className="mt-3 text-[14px] leading-[22px] text-muted">
-            {formatMegabytes(subscription.limits.maxFileSizeBytes)} files • {formatLimit(subscription.limits.maxUploadsPerMonth)} uploads/month • {formatLimit(subscription.limits.maxGeneratedCardsPerMonth)} cards/month • {formatLimit(subscription.limits.maxDecks)} decks
+            {subscription.planId === "free" && !subscription.trial.isExpired
+              ? "Free trial active: upload and generate during your first 3 active days. Backend safety limits still apply."
+              : `${formatMegabytes(subscription.limits.maxFileSizeBytes)} files • ${formatLimit(subscription.limits.maxUploadsPerMonth)} uploads/month • ${formatLimit(subscription.limits.maxGeneratedCardsPerMonth)} cards/month • ${formatLimit(subscription.limits.maxDecks)} decks`}
           </Text>
         </View>
 

@@ -2,6 +2,7 @@ import type { ApiErrorDTO } from "@/api/contracts";
 import { rateLimitedError } from "../apiErrors";
 import { formatBytes, formatLimit, type PlanLimitValue } from "./plans";
 import { getEntitlementSnapshot, type EntitlementSnapshot } from "./usage";
+import { canUsePremiumFeature } from "./trial";
 
 export type EntitlementCheckResult =
   | {
@@ -34,8 +35,9 @@ const createLimitMessage = ({
   unit: string;
 }) => {
   const currentText = current === undefined ? "" : ` Current usage: ${current.toLocaleString()} ${unit}.`;
+  const verb = action === "Extraction" || action === "Deck creation" ? "is" : "are";
 
-  return `${action} is limited on the ${planLabel} plan. Limit: ${limit} ${unit}.${currentText} Upgrade to Pro to continue.`;
+  return `${action} ${verb} limited on the ${planLabel} plan. Limit: ${limit} ${unit}.${currentText} Upgrade to Pro to continue.`;
 };
 
 const fail = (snapshot: EntitlementSnapshot, message: string): EntitlementCheckResult => ({
@@ -49,6 +51,17 @@ const pass = (snapshot: EntitlementSnapshot): EntitlementCheckResult => ({
   snapshot,
 });
 
+const createTrialExpiredMessage = (action: string) =>
+  `Your free trial is complete. You've used Flashly for 3 days. Upgrade to Pro to ${action}.`;
+
+const checkPremiumAccess = (snapshot: EntitlementSnapshot, action: string): EntitlementCheckResult | null => {
+  if (canUsePremiumFeature({ isPro: snapshot.plan.id === "pro", trial: snapshot.trial })) {
+    return null;
+  }
+
+  return fail(snapshot, createTrialExpiredMessage(action));
+};
+
 export const checkUploadEntitlement = async ({
   fileSize,
   userId,
@@ -58,6 +71,15 @@ export const checkUploadEntitlement = async ({
 }): Promise<EntitlementCheckResult> => {
   const snapshot = await getEntitlementSnapshot(userId);
   const { limits } = snapshot.plan;
+  const premiumAccess = checkPremiumAccess(snapshot, "upload and generate more flashcards");
+
+  if (premiumAccess) {
+    return premiumAccess;
+  }
+
+  if (snapshot.plan.id === "free") {
+    return pass(snapshot);
+  }
 
   if (fileSize !== undefined && fileSize > limits.maxFileSizeBytes) {
     return fail(
@@ -96,6 +118,15 @@ export const checkExtractionEntitlement = async ({
 }): Promise<EntitlementCheckResult> => {
   const snapshot = await getEntitlementSnapshot(userId);
   const { limits } = snapshot.plan;
+  const premiumAccess = checkPremiumAccess(snapshot, "extract and generate more flashcards");
+
+  if (premiumAccess) {
+    return premiumAccess;
+  }
+
+  if (snapshot.plan.id === "free") {
+    return pass(snapshot);
+  }
 
   if (fileSize !== undefined && fileSize > limits.maxFileSizeBytes) {
     return fail(
@@ -123,6 +154,15 @@ export const checkGenerationEntitlement = async ({
 }): Promise<EntitlementCheckResult> => {
   const snapshot = await getEntitlementSnapshot(userId);
   const { limits } = snapshot.plan;
+  const premiumAccess = checkPremiumAccess(snapshot, "keep generating smart flashcards");
+
+  if (premiumAccess) {
+    return premiumAccess;
+  }
+
+  if (snapshot.plan.id === "free") {
+    return pass(snapshot);
+  }
 
   if (wouldExceedLimit(snapshot.usage.currentMonthGeneratedCards, requestedCardCount, limits.maxGeneratedCardsPerMonth)) {
     return fail(

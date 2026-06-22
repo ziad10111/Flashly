@@ -3,8 +3,8 @@ import * as FileSystem from "expo-file-system/legacy";
 import { SymbolView, type AndroidSymbol, type SFSymbol } from "expo-symbols";
 import semiBold from "expo-symbols/androidWeights/semiBold";
 import { Redirect, router } from "expo-router";
-import { useEffect, useMemo, useState } from "react";
-import { ActivityIndicator, Pressable, ScrollView, Text, View } from "react-native";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { ActivityIndicator, Alert, Pressable, ScrollView, Text, View } from "react-native";
 import Animated, { FadeInDown } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -633,6 +633,7 @@ export function UploadScreen() {
   const [isSelecting, setIsSelecting] = useState(false);
   const [isBackendProcessing, setIsBackendProcessing] = useState(false);
   const [chunkProgress, setChunkProgress] = useState<ChunkedUploadProgress | null>(null);
+  const lastTrialAlertMessage = useRef<string | null>(null);
   const isLargeSelectedPdf = isLargePdfUpload(selectedFile);
   const stageFlow = useMemo(() => getStageFlow(ocrRequired, isLargeSelectedPdf), [isLargeSelectedPdf, ocrRequired]);
   const contentStyle = useMemo(
@@ -669,6 +670,29 @@ export function UploadScreen() {
 
     return () => clearTimeout(timer);
   }, [completeMockGeneration, currentStage, isBackendProcessing, setProcessingStage, stageFlow, status]);
+
+  useEffect(() => {
+    if (!errorMessage?.toLowerCase().includes("free trial is complete")) {
+      return;
+    }
+
+    if (lastTrialAlertMessage.current === errorMessage) {
+      return;
+    }
+
+    lastTrialAlertMessage.current = errorMessage;
+    Alert.alert(
+      "Your free trial is complete",
+      "You've used Flashly for 3 days. Upgrade to Pro to keep generating smart flashcards.",
+      [
+        { text: "Maybe later", style: "cancel" },
+        {
+          text: "Upgrade to Pro",
+          onPress: () => router.push("/upgrade" as never),
+        },
+      ],
+    );
+  }, [errorMessage]);
 
   const handleChooseFile = async () => {
     if (!selectedStudyType || status === "processing") {
@@ -910,7 +934,8 @@ export function UploadScreen() {
   const activeStageIndex = stageFlow.findIndex((item) => item.stage === currentStage);
   const isProcessing = status === "processing";
   const isReady = status === "ready";
-  const isLimitError = Boolean(errorMessage?.toLowerCase().includes("upgrade to pro"));
+  const isTrialExpiredError = Boolean(errorMessage?.toLowerCase().includes("free trial is complete"));
+  const isLimitError = Boolean(errorMessage?.toLowerCase().includes("upgrade to pro") || isTrialExpiredError);
   const activeStageCopy = getActiveStageCopy({
     chunkProgress,
     currentStage,
@@ -1024,7 +1049,7 @@ export function UploadScreen() {
                 onPress={() => router.push("/upgrade" as never)}
               >
                 <Text selectable={false} className="font-poppins-semibold text-[14px] leading-[20px] text-[#C43D32]">
-                  View Pro upgrade
+                  Upgrade to Pro
                 </Text>
               </PressableScale>
             ) : null}

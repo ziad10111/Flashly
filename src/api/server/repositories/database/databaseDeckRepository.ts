@@ -1,20 +1,49 @@
 import type { DeckDTO, FlashcardChoiceDTO, FlashcardDTO } from "@/api/contracts";
 import { queryPostgres } from "../../database";
 import type { ServerDeckRepository } from "../types";
-import { ensureDatabaseUser, toIsoString, withDatabaseRepositoryError } from "./utils";
+import { ensureDatabaseUser, toIsoString, withDatabaseRepositoryError, withDatabaseTransaction } from "./utils";
 
 export const databaseDeckRepository: ServerDeckRepository = {
   deleteDeck: (deckId, context) =>
-    withDatabaseRepositoryError("decks.deleteDeck", async () => {
-      const user = await ensureDatabaseUser(context?.userId ?? "mock-clerk-user-flashly");
-
-      await queryPostgres(
+    withDatabaseTransaction("decks.deleteDeck", async (client) => {
+      const user = await ensureDatabaseUser(context?.userId ?? "mock-clerk-user-flashly", client);
+      const deckResult = await client.query(
         `
-          DELETE FROM decks
+          SELECT id
+          FROM decks
           WHERE id = $1 AND user_id = $2
+          LIMIT 1
         `,
         [deckId, user.id],
       );
+
+      if (deckResult.rowCount !== 1) {
+        return;
+      }
+
+      await client.query("DELETE FROM review_answers WHERE deck_id = $1 AND user_id = $2", [deckId, user.id]);
+      await client.query("DELETE FROM review_sessions WHERE deck_id = $1 AND user_id = $2", [deckId, user.id]);
+      await client.query("DELETE FROM progress WHERE deck_id = $1 AND user_id = $2", [deckId, user.id]);
+      await client.query("DELETE FROM flashcards WHERE deck_id = $1 AND user_id = $2", [deckId, user.id]);
+      await client.query(
+        `
+          UPDATE uploads
+          SET deck_id = NULL,
+              updated_at = now()
+          WHERE deck_id = $1 AND user_id = $2
+        `,
+        [deckId, user.id],
+      );
+      await client.query(
+        `
+          UPDATE generation_jobs
+          SET deck_id = NULL,
+              updated_at = now()
+          WHERE deck_id = $1 AND user_id = $2
+        `,
+        [deckId, user.id],
+      );
+      await client.query("DELETE FROM decks WHERE id = $1 AND user_id = $2", [deckId, user.id]);
     }),
   getDeckById: (deckId, context) =>
     withDatabaseRepositoryError("decks.getDeckById", async () => {

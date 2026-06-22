@@ -1,4 +1,5 @@
 import { FLASHLY_DATA_MODE, REVENUECAT_WEBHOOK_SECRET } from "../config";
+import { getAccountTrialState } from "../entitlements/trial";
 import { subscriptionRepository } from "../repositories";
 import { ensureDatabaseUser } from "../repositories/database/utils";
 import { buildSubscriptionStatusResponse } from "./subscriptionStatus";
@@ -121,10 +122,13 @@ const getRepositoryUserId = async (clerkUserId: string) => {
 
 export const revenueCatBillingProvider: BillingProvider = {
   getSubscriptionStatus: async (clerkUserId) => {
-    const repositoryUserId = await getRepositoryUserId(clerkUserId);
+    const [repositoryUserId, trial] = await Promise.all([
+      getRepositoryUserId(clerkUserId),
+      getAccountTrialState(clerkUserId, { recordActivity: true }),
+    ]);
     const subscription = await subscriptionRepository.getSubscriptionByUserId(repositoryUserId);
 
-    return buildSubscriptionStatusResponse({ subscription });
+    return buildSubscriptionStatusResponse({ subscription, trial });
   },
   handleWebhook: async (request): Promise<BillingWebhookResult> => {
     verifyRevenueCatWebhookRequest(request);

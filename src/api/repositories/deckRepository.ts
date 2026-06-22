@@ -1,4 +1,4 @@
-import { apiRequest } from "@/api/client";
+import { apiRequest, FlashlyApiError } from "@/api/client";
 import { USE_BACKEND_API } from "@/api/config";
 import { getAllDecks, getDeckById as findLocalDeckById, getDeckCards } from "@/lib/deck-utils";
 import { useFlashlyProgressStore } from "@/store/useFlashlyProgressStore";
@@ -129,6 +129,9 @@ export const deleteDeck = async (deckId: string): Promise<void> => {
     generatedDeckId: uploadStore.generatedDeckId,
     generatedDecks: uploadStore.generatedDecks,
   };
+  const localGeneratedDeck = uploadStore.generatedDecks.find((deck) => deck.id === deckId);
+  const localDeck = getAllDecks(uploadStore.generatedDecks).find((deck) => deck.id === deckId);
+  const isLocalOnlyDeck = Boolean(localDeck && !localGeneratedDeck?.materialId);
   const progressSnapshot = {
     completedDeckIds: progressStore.completedDeckIds,
     deletedDeckIds: progressStore.deletedDeckIds,
@@ -140,15 +143,27 @@ export const deleteDeck = async (deckId: string): Promise<void> => {
   uploadStore.removeGeneratedDeck(deckId);
   useFlashlyProgressStore.getState().deleteDeckProgress(deckId, { hideDeck: true });
 
-  if (!USE_BACKEND_API) {
+  if (!USE_BACKEND_API || isLocalOnlyDeck) {
     return;
   }
 
   try {
-    await apiRequest<{ ok: true }>(`/api/decks/${encodeURIComponent(deckId)}`, { method: "DELETE" });
+    await apiRequest<{ ok: true }>(`/api/decks/${encodeURIComponent(deckId)}`, {
+      debugLabel: "deleteDeck",
+      debugMeta: { deckId },
+      method: "DELETE",
+    });
   } catch (error) {
     useFlashlyUploadStore.setState(uploadSnapshot);
     useFlashlyProgressStore.setState(progressSnapshot);
+    if (typeof __DEV__ !== "undefined" && __DEV__) {
+      console.warn("[Flashly Decks] deleteDeck failed", {
+        code: error instanceof FlashlyApiError ? error.error.code : undefined,
+        deckId,
+        message: error instanceof Error ? error.message : "Unknown delete failure",
+        status: error instanceof FlashlyApiError ? error.status : undefined,
+      });
+    }
     throw error;
   }
 };

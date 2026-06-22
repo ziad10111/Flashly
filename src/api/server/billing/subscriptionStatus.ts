@@ -1,5 +1,6 @@
 import type { SubscriptionStatusResponse } from "@/api/contracts";
 import { ENTITLEMENT_PLANS, normalizePlanId } from "../entitlements/plans";
+import { getMockTrialState } from "../entitlements/trial";
 import type { SubscriptionRow } from "../schema";
 
 const getSource = (subscription: SubscriptionRow | null): SubscriptionStatusResponse["entitlementSource"] => {
@@ -21,9 +22,11 @@ const getSource = (subscription: SubscriptionRow | null): SubscriptionStatusResp
 export const buildSubscriptionStatusResponse = ({
   fallbackPlanId = "free",
   subscription,
+  trial = getMockTrialState(),
 }: {
   fallbackPlanId?: "free" | "pro";
   subscription: SubscriptionRow | null;
+  trial?: SubscriptionStatusResponse["trial"];
 }): SubscriptionStatusResponse => {
   const isActive = subscription?.status === "active" || subscription?.status === "trialing";
   const planId = isActive ? normalizePlanId(subscription?.planId) : fallbackPlanId;
@@ -36,5 +39,6 @@ export const buildSubscriptionStatusResponse = ({
     planLabel: plan.label,
     renewalOrExpirationDate: subscription?.currentPeriodEnd,
     status: subscription?.status ?? "none",
+    trial,
   };
 };

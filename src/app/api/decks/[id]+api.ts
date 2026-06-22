@@ -1,6 +1,5 @@
 import { notFoundError } from "@/api/server/apiErrors";
 import { requireBackendAuth } from "@/api/server/auth";
-import { assertDeckAccess } from "@/api/server/ownership";
 import { deckRepository } from "@/api/server/repositories";
 import { jsonApiError, jsonRouteError, jsonSuccess } from "@/api/server/responses";
 
@@ -9,12 +8,6 @@ export async function GET(request: Request, { id }: { id: string }) {
 
   if (!auth.ok) {
     return auth.response;
-  }
-
-  const access = await assertDeckAccess(auth.context, id);
-
-  if (!access.ok) {
-    return access.response;
   }
 
   try {
@@ -37,13 +30,13 @@ export async function DELETE(request: Request, { id }: { id: string }) {
     return auth.response;
   }
 
-  const access = await assertDeckAccess(auth.context, id);
-
-  if (!access.ok) {
-    return access.response;
-  }
-
   try {
+    const existingDeck = await deckRepository.getDeckById(id, { userId: auth.context.userId });
+
+    if (!existingDeck) {
+      return jsonApiError(notFoundError("Deck was not found."));
+    }
+
     await deckRepository.deleteDeck(id, { userId: auth.context.userId });
     return jsonSuccess({ ok: true });
   } catch (error) {

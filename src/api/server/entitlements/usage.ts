@@ -3,6 +3,8 @@ import { billingProvider } from "../billing";
 import { queryPostgres } from "../database";
 import { ensureDatabaseUser } from "../repositories/database/utils";
 import { ENTITLEMENT_PLANS, type EntitlementPlan } from "./plans";
+import { getAccountTrialState } from "./trial";
+import type { TrialStatusResponse } from "@/api/contracts";
 
 export type EntitlementUsageSnapshot = {
   currentMonthGeneratedCards: number;
@@ -13,6 +15,7 @@ export type EntitlementUsageSnapshot = {
 export type EntitlementSnapshot = {
   mode: "mock" | "database";
   plan: EntitlementPlan;
+  trial: TrialStatusResponse;
   usage: EntitlementUsageSnapshot;
   userId: string;
 };
@@ -28,6 +31,12 @@ const toCount = (value: unknown) => Number(value ?? 0);
 const getMockSnapshot = (userId: string): EntitlementSnapshot => ({
   mode: "mock",
   plan: ENTITLEMENT_PLANS.pro,
+  trial: {
+    activeUsageDayCount: 0,
+    isExpired: false,
+    maxActiveUsageDays: 3,
+    remainingActiveUsageDays: 3,
+  },
   usage: {
     currentMonthGeneratedCards: 0,
     currentMonthUploads: 0,
@@ -85,6 +94,7 @@ export const getEntitlementSnapshot = async (clerkUserId: string): Promise<Entit
   return {
     mode: "database",
     plan,
+    trial: await getAccountTrialState(clerkUserId, { recordActivity: true }),
     usage: await getDatabaseUsage(databaseUser.id),
     userId: clerkUserId,
   };

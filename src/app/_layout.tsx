@@ -9,9 +9,11 @@ import { useEffect } from "react";
 import { View } from "react-native";
 import { PostHogProvider } from "posthog-react-native";
 
+import { apiRequest } from "@/api/client";
 import { StreakCelebration } from "@/components/feedback/StreakCelebration";
 import { XPFlyout } from "@/components/feedback/XPFlyout";
 import { FLASHLY_AUTH_MODE } from "@/api/config";
+import type { SubscriptionStatusResponse } from "@/api/contracts";
 import { setApiAuthTokenProvider } from "@/api/authToken";
 import { useStudySelectionStore } from "@/store/useStudySelectionStore";
 import { initializeClientSentry, withSentryRoot } from "@/lib/monitoring/sentryClient";
@@ -26,7 +28,7 @@ SplashScreen.preventAutoHideAsync().catch(() => {
 const publishableKey = process.env.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY;
 
 function ApiAuthTokenBridge() {
-  const { getToken, isLoaded, isSignedIn } = useAuth();
+  const { getToken, isLoaded, isSignedIn, userId } = useAuth();
 
   useEffect(() => {
     if (FLASHLY_AUTH_MODE !== "clerk" || !isLoaded || !isSignedIn) {
@@ -35,9 +37,12 @@ function ApiAuthTokenBridge() {
     }
 
     setApiAuthTokenProvider(() => getToken());
+    void apiRequest<SubscriptionStatusResponse>("/api/me/subscription", {
+      debugLabel: "recordTrialActivity",
+    }).catch(() => undefined);
 
     return () => setApiAuthTokenProvider(null);
-  }, [getToken, isLoaded, isSignedIn]);
+  }, [getToken, isLoaded, isSignedIn, userId]);
 
   return null;
 }
