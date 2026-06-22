@@ -639,9 +639,9 @@ export function UploadScreen() {
   const contentStyle = useMemo(
     () => ({
       flexGrow: 1,
-      paddingBottom: Math.max(insets.bottom + 160, 190),
-      paddingHorizontal: 18,
-      paddingTop: Math.max(insets.top + 12, 26),
+      paddingBottom: Math.max(insets.bottom + 132, 156),
+      paddingHorizontal: 16,
+      paddingTop: Math.max(insets.top + 10, 22),
     }),
     [insets.bottom, insets.top],
   );
@@ -941,6 +941,13 @@ export function UploadScreen() {
     currentStage,
     isLargeFile: isLargeSelectedPdf,
   });
+  const selectedFileType = selectedFile
+    ? fileTypeLabels[getFileExtension(selectedFile.name)] ?? selectedFile.mimeType ?? "File"
+    : null;
+  const selectedProcessingMode = selectedFile
+    ? getSelectedFileProcessingLabel(selectedFile, ocrRequired)
+    : "Select a file first";
+  const canGenerate = Boolean(selectedFile && !isProcessing && !isReady);
 
   return (
     <ScrollView
@@ -949,87 +956,95 @@ export function UploadScreen() {
       contentContainerStyle={contentStyle}
       showsVerticalScrollIndicator={false}
     >
-      <View className="gap-4">
-        <Animated.View entering={FadeInDown.duration(220)} className="overflow-hidden rounded-[32px] bg-lingua-purple px-5 pb-5 pt-5 shadow-card">
-          <View className="flex-row items-start">
-            <View className="flex-1 pr-3">
-              <View className="mb-3 self-start rounded-full bg-white/15 px-4 py-2">
-                <Text selectable className="font-poppins-semibold text-[12px] leading-[16px] text-white">
-                  AI deck generator
-                </Text>
-              </View>
-              <Text selectable className="font-poppins-bold text-[31px] leading-[37px] text-white">
-                Turn any study material into flashcards.
-              </Text>
-              <Text selectable className="mt-2 text-[14px] leading-[22px] text-[#EAE4FF]">
-                Choose a PDF, text file, Markdown note, or readable image. Flashly handles the extraction and first cards.
-              </Text>
-            </View>
-            <View className="h-[78px] w-[78px] items-center justify-center rounded-[24px] bg-white/15">
-              <AnimatedOwl mood="idle" size={66} variant="float" />
-            </View>
+      <View className="gap-3">
+        <Animated.View entering={FadeInDown.duration(180)} className="flex-row items-center justify-between">
+          <View className="flex-1 pr-3">
+            <Text selectable className="font-poppins-bold text-[30px] leading-[36px] text-ink">
+              Upload Material
+            </Text>
+            <Text selectable className="mt-1 text-[15px] leading-[22px] text-muted">
+              Turn files into AI flashcards.
+            </Text>
+          </View>
+          <View className="h-14 w-14 items-center justify-center rounded-[20px] bg-[#F3EFFF]">
+            <AnimatedOwl mood={selectedFile ? "success" : "idle"} size={46} variant="float" />
           </View>
         </Animated.View>
 
-        <Animated.View entering={FadeInDown.delay(60).duration(220)} className="rounded-[28px] border border-[#ECE8FF] bg-[#F8F5FF] p-4 shadow-card">
-          <View className="flex-row items-start">
-            <View className="h-12 w-12 items-center justify-center rounded-[18px] bg-white">
-              <UploadIcon color="#6C4EF5" fallback="M" name={{ android: "menu_book", ios: "book.closed.fill" }} />
-            </View>
-            <View className="ml-4 flex-1">
-              <Text selectable className="font-poppins-bold text-[21px] leading-[27px] text-ink">
+        <Animated.View entering={FadeInDown.delay(40).duration(180)} className="rounded-[22px] border border-[#ECE8FF] bg-white px-4 py-3 shadow-card">
+          <View className="flex-row items-center justify-between">
+            <View className="flex-1 pr-3">
+              <Text selectable className="text-[12px] leading-[16px] text-muted">
+                Material Type
+              </Text>
+              <Text selectable className="mt-1 font-poppins-bold text-[17px] leading-[23px] text-ink">
                 {selectedStudyType.title}
               </Text>
-              <Text selectable className="mt-1 text-[14px] leading-[21px] text-[#6B7395]">
-                {selectedStudyType.description}
+              <Text selectable className="mt-1 text-[13px] leading-[19px] text-[#6B7395]">
+                {formatSupportedFileTypes(selectedStudyType.supportedFileTypes)} / {getOcrMessage(selectedStudyType)}
               </Text>
             </View>
-          </View>
-          <View className="mt-4 flex-row flex-wrap gap-2">
-            {selectedStudyType.supportedFileTypes.map((type) => (
-              <InfoPill key={type} label={fileTypeLabels[type] ?? type.toUpperCase()} />
-            ))}
-          </View>
-          <View className="mt-3 rounded-[20px] bg-white/80 px-4 py-3">
-            <Text selectable className="text-[13px] leading-[20px] text-muted">
-              Supports {formatSupportedFileTypes(selectedStudyType.supportedFileTypes)}. OCR: {getOcrMessage(selectedStudyType)}.
-            </Text>
+            <Pressable className="rounded-full bg-[#F5F0FF] px-4 py-2" disabled={isProcessing} onPress={handleChangeMaterialType}>
+              <Text selectable={false} className="font-poppins-semibold text-[13px] leading-[18px] text-lingua-purple">
+                Change
+              </Text>
+            </Pressable>
           </View>
         </Animated.View>
 
-        <Animated.View entering={FadeInDown.delay(110).duration(220)} className="rounded-[30px] border-2 border-dashed border-[#DCCFFF] bg-[#FBF9FF] p-5 shadow-card">
-          <View className="items-center">
-            <View className="h-14 w-14 items-center justify-center rounded-[22px] bg-white">
-              <UploadIcon color="#6C4EF5" fallback="UP" name={selectedFile ? uploadSymbols.ready : uploadSymbols.idle} size={28} />
+        <Animated.View entering={FadeInDown.delay(80).duration(180)} className="rounded-[24px] border border-[#ECEEF5] bg-white p-4 shadow-card">
+          <View className="flex-row items-center">
+            <View className="h-11 w-11 items-center justify-center rounded-[16px] bg-[#F7F4FF]">
+              <UploadIcon color="#6C4EF5" fallback="F" name={selectedFile ? uploadSymbols.ready : uploadSymbols.idle} size={24} />
             </View>
-            <Text selectable className="mt-3 text-center font-poppins-bold text-[21px] leading-[27px] text-ink">
-              {selectedFile ? "File selected" : "Choose a file"}
-            </Text>
-            <Text selectable className="mt-2 text-center text-[14px] leading-[21px] text-[#6B7395]">
-              {selectedFile
-                ? "Review the file details, then generate a flashcard deck."
-                : "Pick a PDF, image, Markdown, or text file to start the processing flow."}
-            </Text>
+            <View className="ml-3 flex-1">
+              <Text selectable className="text-[12px] leading-[16px] text-muted">
+                Selected File
+              </Text>
+              <Text selectable className="mt-1 font-poppins-bold text-[18px] leading-[24px] text-ink" numberOfLines={2}>
+                {selectedFile?.name ?? "No file selected"}
+              </Text>
+              <Text selectable className="mt-1 text-[13px] leading-[19px] text-[#6B7395]">
+                {selectedFile ? `${selectedFileType} / ${formatFileSize(selectedFile.size)}` : "Choose a PDF, image, Markdown, or text file."}
+              </Text>
+            </View>
           </View>
 
-          <PressableScale
-            className={`mt-5 items-center justify-center rounded-[26px] bg-lingua-purple px-6 py-4 shadow-card ${
-              isSelecting || isProcessing ? "opacity-70" : ""
-            }`}
-            disabled={isSelecting || isProcessing}
-            haptic
-            onPress={handleChooseFile}
-          >
-            <Text selectable={false} className="font-poppins-semibold text-[20px] leading-[26px] text-white">
-              {isSelecting ? "Choosing file..." : selectedFile ? "Choose another file" : "Choose file"}
-            </Text>
-          </PressableScale>
+          <View className="mt-3 flex-row flex-wrap gap-2">
+            <InfoPill label={`Type: ${selectedFileType ?? "None"}`} />
+            <InfoPill label={`Size: ${selectedFile ? formatFileSize(selectedFile.size) : "-"}`} />
+            <InfoPill label={`Mode: ${selectedProcessingMode}`} />
+          </View>
 
-          <Pressable className="mt-4 items-center" disabled={isProcessing} onPress={handleChangeMaterialType}>
-            <Text selectable={false} className="font-poppins-semibold text-[16px] leading-[22px] text-lingua-purple">
-              Change material type
-            </Text>
-          </Pressable>
+          <View className="mt-4 gap-3">
+            <PressableScale
+              className={`items-center justify-center rounded-[22px] bg-[#F5F0FF] px-5 py-3 ${
+                isSelecting || isProcessing ? "opacity-70" : ""
+              }`}
+              disabled={isSelecting || isProcessing}
+              haptic
+              onPress={handleChooseFile}
+            >
+              <Text selectable={false} className="font-poppins-semibold text-[16px] leading-[22px] text-lingua-purple">
+                {isSelecting ? "Choosing file..." : selectedFile ? "Choose Another File" : "Choose File"}
+              </Text>
+            </PressableScale>
+
+            {!isReady ? (
+              <PressableScale
+                className={`items-center justify-center rounded-[24px] px-6 py-4 shadow-card ${
+                  canGenerate ? "bg-lingua-purple" : "bg-[#D8DCEB]"
+                }`}
+                disabled={!canGenerate}
+                haptic={canGenerate}
+                onPress={handleGenerateFlashcards}
+              >
+                <Text selectable={false} className="font-poppins-semibold text-[19px] leading-[25px] text-white">
+                  Generate AI Flashcards
+                </Text>
+              </PressableScale>
+            ) : null}
+          </View>
         </Animated.View>
 
         {errorMessage ? (
@@ -1050,44 +1065,6 @@ export function UploadScreen() {
               >
                 <Text selectable={false} className="font-poppins-semibold text-[14px] leading-[20px] text-[#C43D32]">
                   Upgrade to Pro
-                </Text>
-              </PressableScale>
-            ) : null}
-          </Animated.View>
-        ) : null}
-
-        {selectedFile ? (
-          <Animated.View entering={FadeInDown.delay(160).duration(220)} className="rounded-[28px] border border-[#ECEEF5] bg-white p-4 shadow-card">
-            <View className="flex-row items-start">
-              <View className="h-12 w-12 items-center justify-center rounded-[18px] bg-[#F7F4FF]">
-                <UploadIcon color="#6C4EF5" fallback="F" name={{ android: "description", ios: "doc.text.fill" }} />
-              </View>
-              <View className="ml-4 flex-1">
-                <Text selectable className="font-poppins-bold text-[20px] leading-[26px] text-ink">
-                  {selectedFile.name}
-                </Text>
-                <Text selectable className="mt-1 text-[14px] leading-[21px] text-[#6B7395]">
-                  {selectedFile.mimeType ?? "Unknown type"} • {formatFileSize(selectedFile.size)}
-                </Text>
-                <Text selectable className="mt-1 text-[14px] leading-[21px] text-[#6B7395]">
-                  Processing: {getSelectedFileProcessingLabel(selectedFile, ocrRequired)}
-                </Text>
-              </View>
-            </View>
-            <View className="mt-4 flex-row flex-wrap gap-2">
-              <InfoPill label={formatFileSize(selectedFile.size)} />
-              <InfoPill label={selectedFile.mimeType ?? "Unknown type"} />
-              <InfoPill label={getSelectedFileProcessingLabel(selectedFile, ocrRequired)} />
-            </View>
-
-            {!isProcessing && !isReady ? (
-              <PressableScale
-                className="mt-5 items-center justify-center rounded-[26px] bg-lingua-purple px-6 py-4 shadow-card"
-                haptic
-                onPress={handleGenerateFlashcards}
-              >
-                <Text selectable={false} className="font-poppins-semibold text-[20px] leading-[26px] text-white">
-                  Generate AI flashcards
                 </Text>
               </PressableScale>
             ) : null}
