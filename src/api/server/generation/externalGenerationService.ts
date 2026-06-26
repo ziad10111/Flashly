@@ -18,6 +18,8 @@ const OPENAI_RESPONSES_URL = "https://api.openai.com/v1/responses";
 const GEMINI_GENERATE_CONTENT_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/models";
 const PROVIDER_TIMEOUT_MS = 90_000;
 const MIN_SOURCE_TEXT_LENGTH = 40;
+const AI_BATCH_CONCURRENCY_LIMIT = 2;
+const LOW_YIELD_RETRY_MAX_INITIAL_DURATION_MS = 45_000;
 
 type OpenAiResponseContent = {
   text?: unknown;
@@ -41,7 +43,19 @@ type GeminiResponseCandidate = {
 
 const nowIso = () => new Date().toISOString();
 
+type AiConfig = {
+  apiKey: string;
+  model: string;
+  provider: typeof FLASHLY_AI_PROVIDER;
+};
+
+let cachedAiConfig: AiConfig | null = null;
+
 const getAiConfig = () => {
+  if (cachedAiConfig) {
+    return cachedAiConfig;
+  }
+
   if (!FLASHLY_AI_PROVIDER || !FLASHLY_AI_API_KEY || !FLASHLY_AI_MODEL) {
     throw new GenerationServiceNotConfiguredError(
       "generation.externalConfig",
@@ -56,11 +70,36 @@ const getAiConfig = () => {
     );
   }
 
-  return {
+  cachedAiConfig = {
     apiKey: FLASHLY_AI_API_KEY,
     model: FLASHLY_AI_MODEL,
     provider: FLASHLY_AI_PROVIDER,
   };
+
+  return cachedAiConfig;
+};
+
+const runWithConcurrency = async <T, R>(
+  items: T[],
+  limit: number,
+  worker: (item: T, index: number) => Promise<R>,
+) => {
+  const results: R[] = new Array(items.length);
+  let nextIndex = 0;
+
+  async function runWorker() {
+    while (nextIndex < items.length) {
+      const currentIndex = nextIndex;
+      nextIndex += 1;
+      results[currentIndex] = await worker(items[currentIndex], currentIndex);
+    }
+  }
+
+  await Promise.all(
+    Array.from({ length: Math.min(limit, items.length) }, () => runWorker()),
+  );
+
+  return results;
 };
 
 const getSourceText = (input: PrepareGenerationInput) => {
@@ -549,73 +588,129 @@ const generateExternalFlashcardDTOs = async (input: GenerateFlashcardDTOsInput) 
       startQuestionIndex,
     });
 
-    for (const [batchIndex, chunk] of selectedChunks.entries()) {
-      const batchInput: GenerateFlashcardDTOsInput = {
-        ...input,
-        metadata: {
-          ...input.metadata,
-          maxCards: chunk.estimatedQuestionCount ?? input.metadata.maxCards,
-          requestedCardCount: input.metadata.requestedCardCount,
-        },
-      };
-      const batch = chunk.text
-        .split("\n")
-        .map((text, index): DetectedMcqBlock | null => {
-          try {
-            const parsed = JSON.parse(text) as Partial<DetectedMcqBlock>;
+    const batchResults = await runWithConcurrency(
+      selectedChunks,
+      input.metadata.batchMode === "batch" ? 1 : AI_BATCH_CONCURRENCY_LIMIT,
+      async (chunk, batchIndex) => {
+        const batchInput: GenerateFlashcardDTOsInput = {
+          ...input,
+          metadata: {
+            ...input.metadata,
+            maxCards: chunk.estimatedQuestionCount ?? input.metadata.maxCards,
+            requestedCardCount: input.metadata.requestedCardCount,
+          },
+        };
+        const batch = chunk.text
+          .split("\n")
+          .map((text, index): DetectedMcqBlock | null => {
+            try {
+              const parsed = JSON.parse(text) as Partial<DetectedMcqBlock>;
 
-            if (!parsed.question || !Array.isArray(parsed.choices)) {
+              if (!parsed.question || !Array.isArray(parsed.choices)) {
+                return null;
+              }
+
+              return {
+                choices: parsed.choices,
+                confidence: parsed.confidence ?? "medium",
+                correctChoiceId: parsed.correctChoiceId,
+                index,
+                question: parsed.question,
+                rawText: parsed.rawText ?? text,
+                sourceEnd: 0,
+                sourcePage: parsed.sourcePage,
+                sourceStart: 0,
+                text,
+              };
+            } catch {
               return null;
             }
+          })
+          .filter((block): block is DetectedMcqBlock => block !== null);
+        const batchPrompt = buildMcqBatchPrompt(batchInput, batch, batchIndex);
+        const batchStartedAt = Date.now();
+        const outputText = await callConfiguredAiProviderWithRetry(
+          batchInput,
+          "",
+          batchPrompt,
+        );
+        const initialDurationMs = Date.now() - batchStartedAt;
+        const batchCards = await parseProviderOutputWithOptionalRepair({
+          input: batchInput,
+          outputText,
+          prompt: batchPrompt,
+        });
+        const expectedBatchCardCount = Math.min(
+          batch.length,
+          batchInput.metadata.requestedCardCount,
+        );
+        let selectedBatchCards = batchCards;
 
-            return {
-              choices: parsed.choices,
-              confidence: parsed.confidence ?? "medium",
-              correctChoiceId: parsed.correctChoiceId,
-              index,
-              question: parsed.question,
-              rawText: parsed.rawText ?? text,
-              sourceEnd: 0,
-              sourcePage: parsed.sourcePage,
-              sourceStart: 0,
-              text,
-            };
-          } catch {
-            return null;
+        if (
+          expectedBatchCardCount > 1 &&
+          batchCards.length < expectedBatchCardCount &&
+          initialDurationMs <= LOW_YIELD_RETRY_MAX_INITIAL_DURATION_MS
+        ) {
+          logComprehensiveGeneration({
+            batchIndex: batchIndex + 1,
+            cardsReturned: batchCards.length,
+            expectedBatchCardCount,
+            initialDurationMs,
+            lowYieldRetry: true,
+          });
+
+          const retryOutputText = await callConfiguredAiProviderWithRetry(
+            batchInput,
+            "",
+            batchPrompt,
+          );
+          const retryCards = await parseProviderOutputWithOptionalRepair({
+            input: batchInput,
+            outputText: retryOutputText,
+            prompt: batchPrompt,
+          });
+
+          if (retryCards.length > batchCards.length) {
+            selectedBatchCards = retryCards;
           }
-        })
-        .filter((block): block is DetectedMcqBlock => block !== null);
-      const batchPrompt = buildMcqBatchPrompt(batchInput, batch, batchIndex);
-      const outputText = await callConfiguredAiProviderWithRetry(
-        batchInput,
-        "",
-        batchPrompt,
-      );
-      const batchCards = await parseProviderOutputWithOptionalRepair({
-        input: batchInput,
-        outputText,
-        prompt: batchPrompt,
-      });
-      rawCards.push(...batchCards);
-      logComprehensiveGeneration({
-        batchIndex: batchIndex + 1,
-        cardsReturned: batchCards.length,
-      });
-    }
+        } else if (expectedBatchCardCount > 1 && batchCards.length < expectedBatchCardCount) {
+          logComprehensiveGeneration({
+            batchIndex: batchIndex + 1,
+            cardsReturned: batchCards.length,
+            expectedBatchCardCount,
+            initialDurationMs,
+            lowYieldRetrySkipped: "initial-provider-call-exceeded-time-budget",
+            retryBudgetMs: LOW_YIELD_RETRY_MAX_INITIAL_DURATION_MS,
+          });
+        }
+
+        logComprehensiveGeneration({
+          batchIndex: batchIndex + 1,
+          cardsReturned: selectedBatchCards.length,
+          initialDurationMs,
+        });
+
+        return selectedBatchCards;
+      },
+    );
+    rawCards = batchResults.flat();
   } else {
     const chunks = split.chunks.length > 0 ? split.chunks : [{ chunkIndex: 0, text: sourceText }];
 
-    for (const chunk of chunks) {
-      const prompt = buildPrompt(input, chunk.text);
-      const outputText = await callConfiguredAiProvider(input, chunk.text, prompt);
-      rawCards.push(
-        ...(await parseProviderOutputWithOptionalRepair({
+    const chunkResults = await runWithConcurrency(
+      chunks,
+      input.metadata.batchMode === "batch" ? 1 : AI_BATCH_CONCURRENCY_LIMIT,
+      async (chunk) => {
+        const prompt = buildPrompt(input, chunk.text);
+        const outputText = await callConfiguredAiProvider(input, chunk.text, prompt);
+        return parseProviderOutputWithOptionalRepair({
           input,
           outputText,
           prompt,
-        })),
-      );
-    }
+        });
+      },
+    );
+    rawCards = chunkResults.flat();
   }
 
   const cards = buildValidatedFlashcards({

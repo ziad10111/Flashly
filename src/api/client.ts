@@ -57,6 +57,7 @@ export const apiRequest = async <TResponse, TBody = unknown>(
   path: string,
   options: ApiRequestOptions<TBody> = {},
 ): Promise<TResponse> => {
+  const startedAt = Date.now();
   const headers = new Headers(options.headers);
   headers.set("Accept", "application/json");
 
@@ -81,6 +82,7 @@ export const apiRequest = async <TResponse, TBody = unknown>(
   if (options.debugLabel && typeof __DEV__ !== "undefined" && __DEV__) {
     const error = isErrorResponse(payload) ? payload.error : undefined;
     console.info(`[Flashly API] ${options.debugLabel}`, {
+      durationMs: Date.now() - startedAt,
       errorCode: error?.code,
       errorMessage: error?.message,
       meta: options.debugMeta,

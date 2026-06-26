@@ -2,23 +2,40 @@ const zlib = require("node:zlib");
 const fs = require("node:fs");
 const path = require("node:path");
 
+const args = process.argv.slice(2);
+const isFullSmoke = args.includes("--full") || process.env.FLASHLY_SMOKE_PDF_MODE === "full";
+const fixtureArg = args.find((arg) => !arg.startsWith("--"));
 const apiBaseUrl = process.env.FLASHLY_SMOKE_API_BASE_URL || "http://localhost:8081";
 const fallbackApiBaseUrl = apiBaseUrl === "http://localhost:8081" ? "http://[::1]:8081" : null;
 const defaultFixturePath = path.join(__dirname, "fixtures", "1-ocr.PDF");
-const fixturePath = process.argv[2] || process.env.FLASHLY_SMOKE_PDF_FIXTURE || defaultFixturePath;
+const fixturePath = fixtureArg || process.env.FLASHLY_SMOKE_PDF_FIXTURE || defaultFixturePath;
 const scannedFixturePath =
   process.env.FLASHLY_SMOKE_SCANNED_PDF_FIXTURE || "d:/MEP/MEP Diploma/download (2).pdf";
 const largeScannedFixturePath =
   process.env.FLASHLY_SMOKE_LARGE_SCANNED_PDF_FIXTURE ||
   "d:/MEP/MEP Diploma/AI mentor Data/Question bank 2/150 MCQ,solved (1).pdf";
 const repoRoot = path.resolve(__dirname, "..");
+const smokeStartedAt = Date.now();
 const templateMarkers = [
   "Define the key term mentioned in the uploaded material.",
   "A key term is the important concept the material expects you to remember.",
   "Real AI generation will replace this template",
 ];
 
+const logTiming = (fixture, stage, metadata = {}) => {
+  const payload = {
+    elapsedMs: Date.now() - smokeStartedAt,
+    fixture,
+    mode: isFullSmoke ? "full" : "fast",
+    stage,
+    ...metadata,
+  };
+
+  console.info("[smoke:pdf timing]", JSON.stringify(payload));
+};
+
 const postJson = async (path, body) => {
+  const startedAt = Date.now();
   const request = {
     body: JSON.stringify(body),
     headers: { "Content-Type": "application/json" },
@@ -38,13 +55,14 @@ const postJson = async (path, body) => {
 
   const payload = await response.json().catch(() => null);
 
-  return { payload, status: response.status };
+  return { durationMs: Date.now() - startedAt, payload, status: response.status };
 };
 
 const generateWithRetry = async (path, body, attempts = 2, options = {}) => {
   let lastResponse = null;
 
   for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    const startedAt = Date.now();
     const response = await postJson(path, {
       ...body,
       idempotencyKey:
@@ -53,6 +71,17 @@ const generateWithRetry = async (path, body, attempts = 2, options = {}) => {
           : `${body.idempotencyKey}-retry-${attempt}`,
     });
     lastResponse = response;
+    logTiming(options.fixtureName ?? "generation", "ai-batch", {
+      attempt,
+      batchIndex: body.batchIndex ?? null,
+      batchMode: body.batchMode,
+      cardCount: response.payload?.cards?.length ?? 0,
+      durationMs: Date.now() - startedAt,
+      hasMore: response.payload?.hasMore ?? null,
+      routeStatus: response.status,
+      retryReason: attempt > 1 ? "previous-attempt-did-not-return-cards" : null,
+      startQuestionIndex: body.startQuestionIndex ?? null,
+    });
 
     if (response.status === 201 && response.payload?.cards?.[0]?.question) {
       return response;
@@ -168,6 +197,7 @@ const runFixturePdfSmoke = async () => {
     return null;
   }
 
+  const fixtureStartedAt = Date.now();
   const fileBuffer = fs.readFileSync(fixturePath);
   const fileName = path.basename(fixturePath);
   const mimeType = "application/pdf";
@@ -191,6 +221,13 @@ const runFixturePdfSmoke = async () => {
     mimeType,
     sourceBase64,
     sourceType,
+  });
+  logTiming("fixture-1-ocr", "extraction", {
+    durationMs: extraction.durationMs,
+    fileName,
+    ocrRequired: extraction.payload?.ocrRequired ?? null,
+    routeStatus: extraction.status,
+    textLength: extraction.payload?.textLength ?? 0,
   });
 
   const extractedText = extraction.payload?.extractedTextPreview || "";
@@ -237,7 +274,7 @@ const runFixturePdfSmoke = async () => {
     materialId,
     requestedCardCount: firstBatchSize,
     startQuestionIndex: 0,
-  }, 2, { keepIdempotencyKey: true });
+  }, 2, { fixtureName: "fixture-1-ocr", keepIdempotencyKey: true });
 
   const firstCards = firstGeneration.payload?.cards || [];
 
@@ -264,7 +301,7 @@ const runFixturePdfSmoke = async () => {
   let batchIndex = 1;
   let hasMore = firstGeneration.payload?.hasMore === true;
 
-  while (hasMore) {
+  while (hasMore && isFullSmoke) {
     const batchGeneration = await generateWithRetry(`/api/materials/${materialId}/generate-flashcards`, {
       extractedTextPreview: extractedText,
       idempotencyKey: "smoke-fixture-1-ocr-pdf",
@@ -276,7 +313,7 @@ const runFixturePdfSmoke = async () => {
       materialId,
       requestedCardCount: backgroundBatchSize,
       startQuestionIndex,
-    }, 2, { keepIdempotencyKey: true });
+    }, 2, { fixtureName: "fixture-1-ocr", keepIdempotencyKey: true });
 
     if (batchGeneration.status !== 201) {
       throw new Error(`Expected background batch ${batchIndex} to pass. Status ${batchGeneration.status}: ${JSON.stringify(batchGeneration.payload)}`);
@@ -293,11 +330,11 @@ const runFixturePdfSmoke = async () => {
     throw new Error(`Expected first batch to return 1-${firstBatchSize} cards, got ${firstCards.length}.`);
   }
 
-  if (cards.length <= firstCards.length) {
+  if (isFullSmoke && cards.length <= firstCards.length) {
     throw new Error(`Expected remaining batches to add cards. First ${firstCards.length}, final ${cards.length}.`);
   }
 
-  if (cards.length < 15) {
+  if (isFullSmoke && cards.length < 15) {
     throw new Error(`Expected at least 15 cards from progressive 1-ocr.PDF fixture, got ${cards.length}.`);
   }
 
@@ -332,11 +369,13 @@ const runFixturePdfSmoke = async () => {
       detectedMcqCount,
       expectedTotalCards: firstGeneration.payload.expectedTotalCards,
       finalGeneratedCardCount: cards.length,
+      fixtureDurationMs: Date.now() - fixtureStartedAt,
       generationStatusTransitions: ["generating", "complete"],
       mcqChoiceCount: firstMcq.choices.length,
       mcqCorrectChoiceId: firstMcq.correctChoiceId,
       mcqQuestion: firstMcq.question,
       routeStatus: firstGeneration.status,
+      truncatedForFastSmoke: !isFullSmoke && hasMore,
     },
   };
 };
@@ -346,6 +385,7 @@ const runScannedPdfFixtureSmoke = async () => {
     return null;
   }
 
+  const fixtureStartedAt = Date.now();
   const fileBuffer = fs.readFileSync(scannedFixturePath);
   const fileName = path.basename(scannedFixturePath);
   const materialId = "smoke-scanned-download-2-pdf";
@@ -358,6 +398,13 @@ const runScannedPdfFixtureSmoke = async () => {
     mimeType: "application/pdf",
     sourceBase64,
     sourceType: "pdf",
+  });
+  logTiming("scanned-fixture", "extraction", {
+    durationMs: extraction.durationMs,
+    fileName,
+    ocrRequired: extraction.payload?.ocrRequired ?? null,
+    routeStatus: extraction.status,
+    textLength: extraction.payload?.textLength ?? 0,
   });
 
   const extractedText = extraction.payload?.extractedTextPreview || "";
@@ -397,7 +444,7 @@ const runScannedPdfFixtureSmoke = async () => {
     materialId,
     requestedCardCount: 3,
     startQuestionIndex: 0,
-  }, 2, { keepIdempotencyKey: true });
+  }, 2, { fixtureName: "scanned-fixture", keepIdempotencyKey: true });
 
   const cards = generation.payload?.cards || [];
 
@@ -419,6 +466,7 @@ const runScannedPdfFixtureSmoke = async () => {
     generation: {
       firstBatchCardCount: cards.length,
       firstQuestion: cards[0]?.question,
+      fixtureDurationMs: Date.now() - fixtureStartedAt,
       routeStatus: generation.status,
     },
   };
@@ -429,6 +477,7 @@ const runLargeScannedPdfFixtureSmoke = async () => {
     return null;
   }
 
+  const fixtureStartedAt = Date.now();
   const fileBuffer = fs.readFileSync(largeScannedFixturePath);
   const fileName = path.basename(largeScannedFixturePath);
   const materialId = "smoke-large-scanned-150-mcq-pdf";
@@ -441,6 +490,13 @@ const runLargeScannedPdfFixtureSmoke = async () => {
     mimeType: "application/pdf",
     sourceBase64,
     sourceType: "pdf",
+  });
+  logTiming("large-scanned-fixture", "extraction", {
+    durationMs: extraction.durationMs,
+    fileName,
+    ocrRequired: extraction.payload?.ocrRequired ?? null,
+    routeStatus: extraction.status,
+    textLength: extraction.payload?.textLength ?? 0,
   });
 
   const extractedText = extraction.payload?.extractedTextPreview || "";
@@ -482,7 +538,7 @@ const runLargeScannedPdfFixtureSmoke = async () => {
     materialId,
     requestedCardCount: 3,
     startQuestionIndex: 0,
-  }, 2, { keepIdempotencyKey: true });
+  }, 2, { fixtureName: "large-scanned-fixture", keepIdempotencyKey: true });
 
   const cards = generation.payload?.cards || [];
   const mcqDetection = generation.payload?.generationDebug?.mcqDetection || {};
@@ -516,7 +572,7 @@ const runLargeScannedPdfFixtureSmoke = async () => {
     materialId,
     requestedCardCount: 5,
     startQuestionIndex: 3,
-  }, 2, { keepIdempotencyKey: true });
+  }, 2, { fixtureName: "large-scanned-fixture", keepIdempotencyKey: true });
 
   const secondCards = secondGeneration.payload?.cards || [];
 
@@ -543,6 +599,7 @@ const runLargeScannedPdfFixtureSmoke = async () => {
     },
     generation: {
       expectedTotalCards: generation.payload?.expectedTotalCards,
+      fixtureDurationMs: Date.now() - fixtureStartedAt,
       firstBatchHasMore: generation.payload?.hasMore,
       firstBatchCardCount: cards.length,
       firstQuestion: cards[0]?.question,
@@ -570,6 +627,12 @@ const main = async () => {
     sourceBase64: `data:application/pdf;base64,${textPdf.base64}`,
     sourceType: "pdf",
   });
+  logTiming("generated-text-pdf", "extraction", {
+    durationMs: extraction.durationMs,
+    ocrRequired: extraction.payload?.ocrRequired ?? null,
+    routeStatus: extraction.status,
+    textLength: extraction.payload?.textLength ?? 0,
+  });
 
   if (extraction.status !== 200) {
     throw new Error(`Expected text PDF extraction to pass. Status ${extraction.status}: ${JSON.stringify(extraction.payload)}`);
@@ -589,7 +652,7 @@ const main = async () => {
     maxCards: 3,
     materialId: "smoke-text-pdf",
     requestedCardCount: 3,
-  }, 3);
+  }, 3, { fixtureName: "generated-text-pdf" });
   const textPdfCards = textPdfGeneration.payload?.cards || [];
 
   if (textPdfGeneration.status !== 201) {
@@ -607,6 +670,12 @@ const main = async () => {
     sourceBase64: scannedPdf.base64,
     sourceType: "pdf",
   });
+  logTiming("generated-scanned-pdf", "extraction", {
+    durationMs: scannedExtraction.durationMs,
+    ocrRequired: scannedExtraction.payload?.ocrRequired ?? null,
+    routeStatus: scannedExtraction.status,
+    textLength: scannedExtraction.payload?.textLength ?? 0,
+  });
 
   const scannedMessage = scannedExtraction.payload?.error?.message || "";
   const scannedExtractedText = scannedExtraction.payload?.extractedTextPreview || "";
@@ -622,8 +691,18 @@ const main = async () => {
   }
 
   const fixtureSmoke = await runFixturePdfSmoke();
-  const scannedFixtureSmoke = await runScannedPdfFixtureSmoke();
-  const largeScannedFixtureSmoke = await runLargeScannedPdfFixtureSmoke();
+  const scannedFixtureSmoke = isFullSmoke
+    ? await runScannedPdfFixtureSmoke()
+    : {
+        skipped: true,
+        reason: "Run npm run smoke:pdf:full for local scanned fixture OCR + AI validation.",
+      };
+  const largeScannedFixtureSmoke = isFullSmoke
+    ? await runLargeScannedPdfFixtureSmoke()
+    : {
+        skipped: true,
+        reason: "Run npm run smoke:pdf:full for large local scanned fixture OCR + AI validation.",
+      };
 
   console.log(JSON.stringify(
     {
@@ -633,6 +712,8 @@ const main = async () => {
       largeScannedFixtureSmoke,
       scannedFixtureSmoke,
       scannedFixturePath: fs.existsSync(scannedFixturePath) ? path.resolve(scannedFixturePath) : null,
+      smokeMode: isFullSmoke ? "full" : "fast",
+      totalDurationMs: Date.now() - smokeStartedAt,
       generatedPdfSmoke: {
         scannedPdfMessage: scannedMessage || null,
         scannedPdfRouteStatus: scannedExtraction.status,

@@ -388,6 +388,30 @@ const shouldUseOcr = (file: SelectedUploadFile, studyType: StudyType) => {
   );
 };
 
+const getEstimatedSecondsForStage = (stage: UploadProcessingStage, needsOcr?: boolean) => {
+  if (stage === "ocr") {
+    return 45;
+  }
+
+  if (stage === "generating") {
+    return needsOcr ? 90 : 60;
+  }
+
+  if (stage === "extracting") {
+    return 15;
+  }
+
+  if (stage === "creating") {
+    return 10;
+  }
+
+  if (stage === "uploading" || stage === "assembling") {
+    return 10;
+  }
+
+  return 30;
+};
+
 const getOcrMessage = (studyType: StudyType) =>
   studyType.requiresOCR || studyType.id === "textbook-pages"
     ? "Required or may be required"
@@ -633,8 +657,14 @@ export function UploadScreen() {
   const [isSelecting, setIsSelecting] = useState(false);
   const [isBackendProcessing, setIsBackendProcessing] = useState(false);
   const [chunkProgress, setChunkProgress] = useState<ChunkedUploadProgress | null>(null);
+  const [estimatedSecondsLeft, setEstimatedSecondsLeft] = useState<number | null>(null);
+  const [showGenerationTimer, setShowGenerationTimer] = useState(false);
+  const [showGenerationDone, setShowGenerationDone] = useState(false);
   const lastTrialAlertMessage = useRef<string | null>(null);
+  const generationDoneTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const generationInFlightRef = useRef(false);
   const isLargeSelectedPdf = isLargePdfUpload(selectedFile);
+  const estimateNeedsOcr = Boolean(ocrRequired || (selectedFile && isSupportedImageUpload(selectedFile)));
   const stageFlow = useMemo(() => getStageFlow(ocrRequired, isLargeSelectedPdf), [isLargeSelectedPdf, ocrRequired]);
   const contentStyle = useMemo(
     () => ({
@@ -645,6 +675,68 @@ export function UploadScreen() {
     }),
     [insets.bottom, insets.top],
   );
+
+  useEffect(() => {
+    if (status === "processing") {
+      if (generationDoneTimerRef.current) {
+        clearTimeout(generationDoneTimerRef.current);
+        generationDoneTimerRef.current = null;
+      }
+
+      setShowGenerationDone(false);
+      setShowGenerationTimer(true);
+      setEstimatedSecondsLeft(getEstimatedSecondsForStage(currentStage, estimateNeedsOcr || currentStage === "ocr"));
+      return;
+    }
+
+    if (status === "ready" && showGenerationTimer) {
+      setEstimatedSecondsLeft(0);
+      setShowGenerationDone(true);
+
+      generationDoneTimerRef.current = setTimeout(() => {
+        setShowGenerationTimer(false);
+        setShowGenerationDone(false);
+        setEstimatedSecondsLeft(null);
+        generationDoneTimerRef.current = null;
+      }, 1200);
+
+      return () => {
+        if (generationDoneTimerRef.current) {
+          clearTimeout(generationDoneTimerRef.current);
+          generationDoneTimerRef.current = null;
+        }
+      };
+    }
+
+    if (status === "failed" || status === "idle" || status === "selected") {
+      if (generationDoneTimerRef.current) {
+        clearTimeout(generationDoneTimerRef.current);
+        generationDoneTimerRef.current = null;
+      }
+
+      setEstimatedSecondsLeft(null);
+      setShowGenerationDone(false);
+      setShowGenerationTimer(false);
+    }
+  }, [currentStage, estimateNeedsOcr, showGenerationTimer, status]);
+
+  useEffect(() => {
+    if (!showGenerationTimer || showGenerationDone || status !== "processing" || estimatedSecondsLeft === null) {
+      return;
+    }
+
+    const timer = setInterval(() => {
+      setEstimatedSecondsLeft((seconds) => {
+        if (seconds === null) {
+          return seconds;
+        }
+
+        return Math.max(seconds - 1, 0);
+      });
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, [estimatedSecondsLeft, showGenerationDone, showGenerationTimer, status]);
 
   useEffect(() => {
     if (status !== "processing" || isBackendProcessing) {
@@ -731,9 +823,11 @@ export function UploadScreen() {
   };
 
   const handleGenerateFlashcards = async () => {
-    if (!selectedFile || !selectedStudyType || status === "processing") {
+    if (!selectedFile || !selectedStudyType || status === "processing" || isBackendProcessing || generationInFlightRef.current) {
       return;
     }
+
+    generationInFlightRef.current = true;
 
     if (USE_BACKEND_API) {
       try {
@@ -741,12 +835,14 @@ export function UploadScreen() {
       } catch (error) {
         const message = getBackendFlowErrorMessage(error) ?? "Flashly could not use this file for the MVP AI demo.";
         useFlashlyUploadStore.getState().failMockGeneration(message);
+        generationInFlightRef.current = false;
         return;
       }
     }
 
     if (!USE_BACKEND_API) {
       startMockProcessing();
+      generationInFlightRef.current = false;
       return;
     }
 
@@ -904,6 +1000,7 @@ export function UploadScreen() {
         .failMockGeneration("Flashly could not finish backend AI generation. Please try again with readable study text.");
     } finally {
       setIsBackendProcessing(false);
+      generationInFlightRef.current = false;
     }
   };
 
@@ -947,7 +1044,12 @@ export function UploadScreen() {
   const selectedProcessingMode = selectedFile
     ? getSelectedFileProcessingLabel(selectedFile, ocrRequired)
     : "Select a file first";
-  const canGenerate = Boolean(selectedFile && !isProcessing && !isReady);
+  const canGenerate = Boolean(selectedFile && !isProcessing && !isReady && !isBackendProcessing);
+  const generationTimerLabel = showGenerationDone
+    ? "Done"
+    : estimatedSecondsLeft === null
+      ? "Estimating time..."
+      : `Estimated time left: ${Math.max(estimatedSecondsLeft, 0)}s`;
 
   return (
     <ScrollView
@@ -1097,6 +1199,11 @@ export function UploadScreen() {
             <Text selectable className="mt-2 text-right font-poppins-semibold text-[13px] leading-[18px] text-lingua-purple">
               {progressPercentage}%
             </Text>
+            {showGenerationTimer ? (
+              <Text selectable className="mt-1 text-right text-[12px] leading-[16px] text-muted">
+                {generationTimerLabel}
+              </Text>
+            ) : null}
 
             <ProcessingStageRail
               activeStageIndex={activeStageIndex}

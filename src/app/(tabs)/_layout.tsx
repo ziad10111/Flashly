@@ -21,7 +21,7 @@ export default function TabsLayout() {
   }
 
   if (FLASHLY_AUTH_MODE === "clerk" && !isSignedIn) {
-    return <Redirect href="/onboarding" />;
+    return <Redirect href="/sign-in" />;
   }
 
   if (!selectedStudyType) {

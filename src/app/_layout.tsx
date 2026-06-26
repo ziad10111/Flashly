@@ -1,7 +1,7 @@
 import "../../global.css";
 import { ClerkProvider, useAuth } from "@clerk/expo";
 import { tokenCache } from "@clerk/expo/token-cache";
-import { Stack } from "expo-router";
+import { Stack, useRouter, useSegments } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import { StatusBar } from "expo-status-bar";
 import * as SystemUI from "expo-system-ui";
@@ -43,6 +43,33 @@ function ApiAuthTokenBridge() {
 
     return () => setApiAuthTokenProvider(null);
   }, [getToken, isLoaded, isSignedIn, userId]);
+
+  return null;
+}
+
+function AuthRouteGuard() {
+  const { isLoaded, isSignedIn } = useAuth();
+  const router = useRouter();
+  const segments = useSegments();
+
+  useEffect(() => {
+    if (FLASHLY_AUTH_MODE !== "clerk" || !isLoaded) {
+      return;
+    }
+
+    const rootSegment = segments[0];
+    const isProtectedRoute =
+      rootSegment === "(tabs)" ||
+      rootSegment === "deck" ||
+      rootSegment === "review" ||
+      rootSegment === "study-type" ||
+      rootSegment === "upgrade";
+
+    if (!isSignedIn && isProtectedRoute) {
+      router.dismissAll();
+      router.replace("/sign-in" as never);
+    }
+  }, [isLoaded, isSignedIn, router, segments]);
 
   return null;
 }
@@ -90,6 +117,7 @@ function RootLayout() {
     >
       <ClerkProvider publishableKey={publishableKey} tokenCache={tokenCache}>
         <ApiAuthTokenBridge />
+        <AuthRouteGuard />
         <StatusBar style="dark" />
         <View style={{ flex: 1 }}>
           <Stack

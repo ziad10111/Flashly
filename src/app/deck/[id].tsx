@@ -1,6 +1,6 @@
 import { SymbolView, type AndroidSymbol, type SFSymbol } from "expo-symbols";
 import semiBold from "expo-symbols/androidWeights/semiBold";
-import { router, useLocalSearchParams } from "expo-router";
+import { router, useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Alert, ScrollView, StyleSheet, Text, View } from "react-native";
 import Animated, { FadeInDown } from "react-native-reanimated";
@@ -21,7 +21,6 @@ import {
   runRemainingGeneratedDeckBatches,
 } from "@/lib/progressive-generation";
 import { useActiveDeckStore } from "@/store/useActiveDeckStore";
-import { useFlashlyAssistantStore } from "@/store/useFlashlyAssistantStore";
 import { useFlashlyProgressStore } from "@/store/useFlashlyProgressStore";
 import { useFlashlyUploadStore } from "@/store/useFlashlyUploadStore";
 
@@ -232,13 +231,14 @@ function StateCard({ title, body }: { title: string; body: string }) {
 
 export default function DeckDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
+  const deckRouter = useRouter();
   const insets = useSafeAreaInsets();
   const [loadState, setLoadState] = useState<LoadState>("loading");
   const [deckResponse, setDeckResponse] = useState<GetDeckResponse | null>(null);
   const [isRetryingGeneration, setIsRetryingGeneration] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
   const previousGenerationStatusRef = useRef<string | undefined>(undefined);
   const setActiveDeckId = useActiveDeckStore((state) => state.setActiveDeckId);
-  const clearAssistantConversation = useFlashlyAssistantStore((state) => state.clearConversation);
   const progress = useFlashlyProgressStore((state) => (id ? state.deckProgressById[id] : undefined));
   const generatedDecks = useFlashlyUploadStore((state) => state.generatedDecks);
   const generatedCardsByDeckId = useFlashlyUploadStore((state) => state.generatedCardsByDeckId);
@@ -407,25 +407,39 @@ export default function DeckDetailScreen() {
     }
   };
 
+  const performDeleteDeck = async () => {
+    if (isDeleting) {
+      return;
+    }
+
+    setIsDeleting(true);
+
+    try {
+      await deleteDeck(deck.id);
+      setActiveDeckId("");
+      deckRouter.replace("/decks" as never);
+    } catch (error) {
+      console.warn("Delete deck failed", error);
+      Alert.alert("Could not delete deck", "The deck was not deleted. Please try again.");
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
   const handleDeleteDeck = () => {
+    if (isDeleting) {
+      return;
+    }
+
     Alert.alert(
-      "Delete deck?",
-      `"${deck.title}" will be removed from this device, including its local review progress.`,
+      "Delete deck",
+      `"${deck.title}" will be permanently removed, including its review progress. This action cannot be undone.`,
       [
         { style: "cancel", text: "Cancel" },
         {
+          onPress: () => void performDeleteDeck(),
           style: "destructive",
           text: "Delete",
-          onPress: async () => {
-            try {
-              await deleteDeck(deck.id);
-              clearAssistantConversation(deck.id);
-              setActiveDeckId("");
-              router.replace("/decks" as never);
-            } catch {
-              Alert.alert("Could not delete deck", "Flashly could not delete this deck. Please try again.");
-            }
-          },
         },
       ],
     );
@@ -596,9 +610,14 @@ export default function DeckDetailScreen() {
           </PressableScale>
         ) : null}
 
-        <PressableScale className="items-center justify-center rounded-[24px] bg-[#FFF0F0] px-6 py-4" haptic onPress={handleDeleteDeck}>
+        <PressableScale
+          className={`items-center justify-center rounded-[24px] px-6 py-4 ${isDeleting ? "bg-[#FFE0E0]" : "bg-[#FFF0F0]"}`}
+          disabled={isDeleting}
+          haptic
+          onPress={handleDeleteDeck}
+        >
           <Text selectable={false} className="font-poppins-semibold text-[18px] leading-[24px] text-[#FF4D4F]">
-            Delete Deck
+            {isDeleting ? "Deleting..." : "Delete Deck"}
           </Text>
         </PressableScale>
       </Animated.View>

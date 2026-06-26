@@ -155,23 +155,28 @@ const persistSourceChunks = async (
   }
 
   const chunks = splitSourceChunks(text);
-
-  for (const [index, chunk] of chunks.entries()) {
-    await client.query(
-      `
-        INSERT INTO source_chunks (user_id, material_id, chunk_index, text, text_length, metadata)
-        VALUES ($1, $2, $3, $4, $5, $6::jsonb)
-      `,
-      [
-        userId,
-        materialId,
-        index,
-        chunk,
-        chunk.length,
-        JSON.stringify({ source: "extraction-result" }),
-      ],
+  const values: unknown[] = [];
+  const placeholders = chunks.map((chunk, index) => {
+    const offset = values.length;
+    values.push(
+      userId,
+      materialId,
+      index,
+      chunk,
+      chunk.length,
+      JSON.stringify({ source: "extraction-result" }),
     );
-  }
+
+    return `($${offset + 1}, $${offset + 2}, $${offset + 3}, $${offset + 4}, $${offset + 5}, $${offset + 6}::jsonb)`;
+  });
+
+  await client.query(
+    `
+        INSERT INTO source_chunks (user_id, material_id, chunk_index, text, text_length, metadata)
+        VALUES ${placeholders.join(", ")}
+      `,
+    values,
+  );
 
   return chunks.length;
 };
@@ -367,11 +372,40 @@ const upsertFlashcards = async (
   cards: FlashcardDTO[],
 ) => {
   const positions: number[] = [];
-
-  for (const card of cards) {
+  const values: unknown[] = [];
+  const placeholders = cards.map((card) => {
     positions.push(card.position);
-    await client.query(
-      `
+    const offset = values.length;
+    values.push(
+      userId,
+      deckId,
+      materialId,
+      getSafeSourceChunkId(card.sourceChunkId),
+      card.type,
+      card.question,
+      card.answer,
+      card.explanation ?? null,
+      card.difficulty,
+      card.topic ?? null,
+      JSON.stringify(card.choices ?? null),
+      card.correctChoiceId ?? null,
+      card.sourcePage ?? null,
+      card.sourceSection ?? null,
+      card.position,
+      JSON.stringify({
+        originalGeneratedCardId: card.id,
+      }),
+    );
+
+    return `($${offset + 1}, $${offset + 2}, $${offset + 3}, $${offset + 4}, $${offset + 5}, $${offset + 6}, $${offset + 7}, $${offset + 8}, $${offset + 9}, $${offset + 10}, $${offset + 11}::jsonb, $${offset + 12}, $${offset + 13}, $${offset + 14}, $${offset + 15}, $${offset + 16}::jsonb)`;
+  });
+
+  if (positions.length === 0) {
+    return [];
+  }
+
+  await client.query(
+    `
         INSERT INTO flashcards (
           user_id,
           deck_id,
@@ -390,7 +424,7 @@ const upsertFlashcards = async (
           position,
           metadata
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb, $12, $13, $14, $15, $16::jsonb)
+        VALUES ${placeholders.join(", ")}
         ON CONFLICT (deck_id, position)
         DO UPDATE SET
           source_chunk_id = EXCLUDED.source_chunk_id,
@@ -407,32 +441,8 @@ const upsertFlashcards = async (
           metadata = EXCLUDED.metadata,
           updated_at = now()
       `,
-      [
-        userId,
-        deckId,
-        materialId,
-        getSafeSourceChunkId(card.sourceChunkId),
-        card.type,
-        card.question,
-        card.answer,
-        card.explanation ?? null,
-        card.difficulty,
-        card.topic ?? null,
-        JSON.stringify(card.choices ?? null),
-        card.correctChoiceId ?? null,
-        card.sourcePage ?? null,
-        card.sourceSection ?? null,
-        card.position,
-        JSON.stringify({
-          originalGeneratedCardId: card.id,
-        }),
-      ],
-    );
-  }
-
-  if (positions.length === 0) {
-    return [];
-  }
+    values,
+  );
 
   const result = await client.query<PersistedFlashcardRow>(
     `

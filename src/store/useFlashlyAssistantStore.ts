@@ -25,6 +25,7 @@ type FlashlyAssistantState = {
   conversationsByDeckId: Record<string, AssistantConversation>;
   addMessagePair: (deckId: string, userContent: string, assistantContent: string, materialId?: string) => void;
   clearConversation: (deckId: string) => void;
+  resetAssistant: () => void;
   setActiveDeckId: (deckId: string | null) => void;
 };
 
@@ -90,6 +91,11 @@ export const useFlashlyAssistantStore = create<FlashlyAssistantState>()(
           return {
             conversationsByDeckId: nextConversations,
           };
+        }),
+      resetAssistant: () =>
+        set({
+          activeDeckId: null,
+          conversationsByDeckId: {},
         }),
       setActiveDeckId: (deckId) => set({ activeDeckId: deckId }),
     }),

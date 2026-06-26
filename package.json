@@ -4,8 +4,8 @@
   "version": "1.0.0",
   "scripts": {
     "start": "expo start",
-    "android": "expo start --android",
-    "ios": "expo start --ios",
+    "android": "expo run:android",
+    "ios": "expo run:ios",
     "web": "expo start --web",
     "build:android:preview": "eas build --platform android --profile preview",
     "build:android:production": "eas build --platform android --profile production",
@@ -19,6 +19,7 @@
     "smoke:security": "node scripts/smoke-security.js",
     "smoke:billing": "tsx scripts/smoke-revenuecat-webhook-security.ts",
     "smoke:pdf": "node scripts/smoke-pdf-extraction.js",
+    "smoke:pdf:full": "node scripts/smoke-pdf-extraction.js --full",
     "check:staging-deployment": "node scripts/check-staging-deployment.js",
     "test:postgres-config": "node scripts/test-postgres-config.js",
     "test:nvidia-provider": "tsx scripts/test-nvidia-generation-provider.ts",

@@ -28,6 +28,7 @@ npm-debug.*
 yarn-debug.*
 yarn-error.*
 .tmp/
+*.apk
 
 # macOS
 .DS_Store

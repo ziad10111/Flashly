@@ -3,7 +3,8 @@ import { Image } from "expo-image";
 import * as ImagePicker from "expo-image-picker";
 import { SymbolView, type AndroidSymbol, type SFSymbol } from "expo-symbols";
 import semiBold from "expo-symbols/androidWeights/semiBold";
-import { router } from "expo-router";
+import { router, useRouter } from "expo-router";
+import type { ReactNode } from "react";
 import { useMemo, useState } from "react";
 import { ActivityIndicator, Alert, ScrollView, StyleSheet, Text, View } from "react-native";
 import Animated, { FadeInDown } from "react-native-reanimated";
@@ -12,6 +13,12 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { FLASHLY_AUTH_MODE } from "@/api/config";
 import { PressableScale } from "@/components/animated/pressable-scale";
 import { useFlashlyDecks } from "@/hooks/useFlashlyDecks";
+import { setApiAuthTokenProvider } from "@/api/authToken";
+import { useActiveDeckStore } from "@/store/useActiveDeckStore";
+import { useFlashlyAssistantStore } from "@/store/useFlashlyAssistantStore";
+import { useFlashlyProgressStore } from "@/store/useFlashlyProgressStore";
+import { useFlashlyUploadStore } from "@/store/useFlashlyUploadStore";
+import { useStudySelectionStore } from "@/store/useStudySelectionStore";
 
 type ProfileSymbol = {
   android: AndroidSymbol;
@@ -119,23 +126,35 @@ function AccountAction({
   fallback,
   icon,
   label,
+  disabled = false,
   onPress,
+  trailing,
 }: {
   accent: string;
+  disabled?: boolean;
   fallback: string;
   icon: ProfileSymbol;
   label: string;
   onPress: () => void;
+  trailing?: ReactNode;
 }) {
   return (
-    <PressableScale className="flex-row items-center rounded-[20px] bg-[#F8F9FD] px-4 py-3" haptic onPress={onPress}>
+    <PressableScale
+      className="flex-row items-center rounded-[20px] bg-[#F8F9FD] px-4 py-3"
+      disabled={disabled}
+      haptic
+      onPress={onPress}
+      style={{ opacity: disabled ? 0.65 : 1 }}
+    >
       <ProfileIcon accent={accent} fallback={fallback} name={icon} size={19} />
       <Text selectable={false} className="ml-3 flex-1 font-poppins-semibold text-[15px] leading-[21px] text-ink">
         {label}
       </Text>
-      <Text selectable={false} className="font-poppins-semibold text-[17px] leading-[19px] text-muted">
-        {">"}
-      </Text>
+      {trailing ?? (
+        <Text selectable={false} className="font-poppins-semibold text-[17px] leading-[19px] text-muted">
+          {">"}
+        </Text>
+      )}
     </PressableScale>
   );
 }
@@ -172,10 +191,12 @@ function getInitials(name?: string | null) {
 export default function ProfileTabScreen() {
   const { user } = useUser();
   const { signOut } = useClerk();
+  const profileRouter = useRouter();
   const insets = useSafeAreaInsets();
   const [avatarUri, setAvatarUri] = useState<string | null>(null);
   const [avatarStatus, setAvatarStatus] = useState<"idle" | "uploading">("idle");
   const [avatarMessage, setAvatarMessage] = useState<string | null>(null);
+  const [isSigningOut, setIsSigningOut] = useState(false);
   const { decks, errorMessage, progress, status } = useFlashlyDecks();
   const displayName = user?.fullName ?? user?.firstName ?? "Flashly Student";
   const email = user?.primaryEmailAddress?.emailAddress ?? "Local demo account";
@@ -242,12 +263,51 @@ export default function ProfileTabScreen() {
     },
   ];
 
-  const handleSignOut = async () => {
-    if (FLASHLY_AUTH_MODE === "clerk") {
-      await signOut();
+  const clearFlashlyLocalState = () => {
+    setApiAuthTokenProvider(null);
+    useStudySelectionStore.getState().clearSelectedStudyType();
+    useActiveDeckStore.getState().resetActiveDeck();
+    useFlashlyProgressStore.getState().resetProgress();
+    useFlashlyUploadStore.getState().resetAllUploadState();
+    useFlashlyAssistantStore.getState().resetAssistant();
+  };
+
+  const performSignOut = async () => {
+    if (isSigningOut) {
+      return;
     }
 
-    router.replace("/onboarding");
+    setIsSigningOut(true);
+
+    try {
+      if (FLASHLY_AUTH_MODE === "clerk") {
+        await signOut();
+      }
+
+      clearFlashlyLocalState();
+      profileRouter.dismissAll();
+      profileRouter.replace("/sign-in");
+    } catch (error) {
+      console.warn("Sign out failed", error);
+      Alert.alert("Sign out failed", "We couldn't sign you out. Please try again.");
+    } finally {
+      setIsSigningOut(false);
+    }
+  };
+
+  const handleSignOut = () => {
+    if (isSigningOut) {
+      return;
+    }
+
+    Alert.alert("Sign out", "Are you sure you want to sign out?", [
+      { style: "cancel", text: "Cancel" },
+      {
+        onPress: () => void performSignOut(),
+        style: "destructive",
+        text: "Sign out",
+      },
+    ]);
   };
 
   const uploadAvatarToClerk = async (asset: ImagePicker.ImagePickerAsset) => {
@@ -489,10 +549,12 @@ export default function ProfileTabScreen() {
         />
         <AccountAction
           accent="#FF4D4F"
+          disabled={isSigningOut}
           fallback="SO"
           icon={{ android: "logout", ios: "rectangle.portrait.and.arrow.right" }}
-          label="Sign Out"
+          label={isSigningOut ? "Signing Out..." : "Sign Out"}
           onPress={handleSignOut}
+          trailing={isSigningOut ? <ActivityIndicator size="small" color="#FF4D4F" /> : undefined}
         />
       </Animated.View>
     </ScrollView>

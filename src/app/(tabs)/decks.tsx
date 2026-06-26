@@ -15,7 +15,6 @@ import { images } from "@/constants/images";
 import { useFlashlyDecks } from "@/hooks/useFlashlyDecks";
 import { formatPercent } from "@/lib/deck-utils";
 import { useActiveDeckStore } from "@/store/useActiveDeckStore";
-import { useFlashlyAssistantStore } from "@/store/useFlashlyAssistantStore";
 
 type MaterialTab = "cards" | "review";
 
@@ -192,10 +191,10 @@ function DeckRow({
 export default function DecksTabScreen() {
   const insets = useSafeAreaInsets();
   const [activeTab, setActiveTab] = useState<MaterialTab>("cards");
+  const [deletingDeckId, setDeletingDeckId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const activeDeckId = useActiveDeckStore((state) => state.activeDeckId);
   const setActiveDeckId = useActiveDeckStore((state) => state.setActiveDeckId);
-  const clearAssistantConversation = useFlashlyAssistantStore((state) => state.clearConversation);
   const { decks, errorMessage, status } = useFlashlyDecks();
   const visibleDecks = useMemo(() => {
     const tabDecks =
@@ -233,25 +232,35 @@ export default function DecksTabScreen() {
   };
 
   const handleDeleteDeck = (deck: DeckDTO) => {
+    if (deletingDeckId) {
+      return;
+    }
+
     Alert.alert(
-      "Delete deck?",
-      `"${deck.title}" will be removed from this device, including its local review progress.`,
+      "Delete deck",
+      `"${deck.title}" will be permanently removed, including its review progress. This action cannot be undone.`,
       [
         { style: "cancel", text: "Cancel" },
         {
           style: "destructive",
           text: "Delete",
           onPress: async () => {
+            setDeletingDeckId(deck.id);
+
             try {
               await deleteDeck(deck.id);
-              clearAssistantConversation(deck.id);
 
               if (activeDeckId === deck.id) {
                 const nextDeck = decks.find((item) => item.id !== deck.id);
                 setActiveDeckId(nextDeck?.id ?? "");
               }
-            } catch {
-              Alert.alert("Could not delete deck", "Flashly could not delete this deck. Please try again.");
+
+              router.replace("/decks" as never);
+            } catch (error) {
+              console.warn("Delete deck failed", error);
+              Alert.alert("Could not delete deck", "The deck was not deleted. Please try again.");
+            } finally {
+              setDeletingDeckId(null);
             }
           },
         },
@@ -264,7 +273,7 @@ export default function DecksTabScreen() {
       { style: "cancel", text: "Cancel" },
       {
         style: "destructive",
-        text: "Delete deck",
+        text: deletingDeckId === deck.id ? "Deleting..." : "Delete deck",
         onPress: () => handleDeleteDeck(deck),
       },
     ]);

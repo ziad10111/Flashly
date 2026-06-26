@@ -7,6 +7,7 @@ import { deckMaterials } from "@/data/deckMaterials";
 type ActiveDeckState = {
   activeDeckId: string;
   hasHydrated: boolean;
+  resetActiveDeck: () => void;
   setActiveDeckId: (deckId: string) => void;
   setHasHydrated: (hasHydrated: boolean) => void;
 };
@@ -20,6 +21,7 @@ export const useActiveDeckStore = create<ActiveDeckState>()(
     (set) => ({
       activeDeckId: defaultDeck.id,
       hasHydrated: false,
+      resetActiveDeck: () => set({ activeDeckId: defaultDeck.id }),
       setActiveDeckId: (deckId) => set({ activeDeckId: deckId }),
       setHasHydrated: (hasHydrated) => set({ hasHydrated }),
     }),

@@ -71,6 +71,7 @@ type FlashlyUploadState = {
   markGeneratedDeckGenerating: (deckId: string) => void;
   persistGeneratedDeckResponse: (response: GenerateFlashcardsResponse) => string;
   removeGeneratedDeck: (deckId: string) => void;
+  resetAllUploadState: () => void;
   resetUpload: () => void;
   selectFile: (file: SelectedUploadFile, ocrRequired: boolean) => void;
   setOcrRequired: (ocrRequired: boolean) => void;
@@ -603,6 +604,21 @@ export const useFlashlyUploadStore = create<FlashlyUploadState>()(
             generatedDeckId: current.generatedDeckId === deckId ? null : current.generatedDeckId,
             generatedDecks: current.generatedDecks.filter((deck) => deck.id !== deckId),
           };
+        }),
+      resetAllUploadState: () =>
+        set({
+          currentStage: "idle",
+          errorMessage: null,
+          generatedCardsByDeckId: {},
+          generatedDeckId: null,
+          generatedDecks: [],
+          idempotencyKey: null,
+          materialId: null,
+          ocrRequired: false,
+          progressPercentage: 0,
+          selectedFile: null,
+          status: "idle",
+          uploadJobId: null,
         }),
       resetUpload: () =>
         set({
