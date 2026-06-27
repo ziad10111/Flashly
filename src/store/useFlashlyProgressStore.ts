@@ -170,9 +170,17 @@ export const useFlashlyProgressStore = create<FlashlyProgressState>()(
           const removedProgress = nextDeckProgressById[deckId];
           delete nextDeckProgressById[deckId];
           const hideDeck = options?.hideDeck ?? true;
+          const nextDailyReviewedCardIds = state.dailyReviewProgress.reviewedCardIds.filter(
+            (cardId) => !cardId.startsWith(`${deckId}:`),
+          );
 
           return {
             completedDeckIds: state.completedDeckIds.filter((id) => id !== deckId),
+            dailyReviewProgress: {
+              ...state.dailyReviewProgress,
+              reviewedCardIds: nextDailyReviewedCardIds,
+              reviewedCount: nextDailyReviewedCardIds.length,
+            },
             deletedDeckIds: hideDeck ? unique([...state.deletedDeckIds, deckId]) : state.deletedDeckIds.filter((id) => id !== deckId),
             deckProgressById: nextDeckProgressById,
             reviewSessionHistory: state.reviewSessionHistory.filter((session) => session.deckId !== deckId),

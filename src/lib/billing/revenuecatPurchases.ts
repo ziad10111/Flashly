@@ -1,8 +1,9 @@
 import Constants from "expo-constants";
-import { Platform } from "react-native";
+import { Platform, type PlatformOSType } from "react-native";
 import type { CustomerInfo, PurchasesPackage } from "react-native-purchases";
 
 const androidApiKey = process.env.EXPO_PUBLIC_REVENUECAT_ANDROID_API_KEY?.trim();
+const iosApiKey = process.env.EXPO_PUBLIC_REVENUECAT_IOS_API_KEY?.trim();
 export const revenueCatEntitlementId = process.env.EXPO_PUBLIC_REVENUECAT_ENTITLEMENT_ID?.trim() || "pro";
 
 type PurchasesModule = typeof import("react-native-purchases").default;
@@ -26,11 +27,46 @@ export type RevenueCatAvailability =
     };
 
 let cachedPurchasesModule: PurchasesModule | null = null;
+let configurePromise: Promise<PurchasesModule> | null = null;
+let configuredApiKey: string | null = null;
 let configuredUserId: string | null = null;
 
 const isExpoGo = () => Constants.appOwnership === "expo";
 
 const isNativePlatform = () => Platform.OS === "android" || Platform.OS === "ios";
+
+const isDevelopmentBuild = () => typeof __DEV__ !== "undefined" && __DEV__;
+
+const isRevenueCatTestKey = (apiKey: string | undefined) => apiKey?.toLowerCase().startsWith("test_") ?? false;
+
+const getApiKey = (platform: PlatformOSType = Platform.OS) => {
+  if (platform === "android") {
+    return androidApiKey;
+  }
+
+  if (platform === "ios") {
+    return iosApiKey;
+  }
+
+  return undefined;
+};
+
+const getPlatformLabel = () => (Platform.OS === "ios" ? "iOS" : "Android");
+
+const getConfiguredKeyProblem = () => {
+  const apiKey = getApiKey();
+  const platform = getPlatformLabel();
+
+  if (!apiKey) {
+    return `RevenueCat ${platform} API key is not configured.`;
+  }
+
+  if (!isDevelopmentBuild() && isRevenueCatTestKey(apiKey)) {
+    return `RevenueCat ${platform} API key is a test key. Configure the production public SDK key for this release build.`;
+  }
+
+  return null;
+};
 
 export const getRevenueCatAvailability = (userId?: string | null): RevenueCatAvailability => {
   if (!isNativePlatform()) {
@@ -47,24 +83,19 @@ export const getRevenueCatAvailability = (userId?: string | null): RevenueCatAva
     };
   }
 
-  if (typeof __DEV__ !== "undefined" && __DEV__) {
+  if (isDevelopmentBuild()) {
     return {
       available: false,
-      reason: "Payments will be enabled in a production build.",
+      reason: "Payments require a release native build.",
     };
   }
 
-  if (Platform.OS === "android" && !androidApiKey) {
-    return {
-      available: false,
-      reason: "RevenueCat Android API key is not configured.",
-    };
-  }
+  const keyProblem = getConfiguredKeyProblem();
 
-  if (Platform.OS === "ios") {
+  if (keyProblem) {
     return {
       available: false,
-      reason: "RevenueCat iOS API key is not configured yet.",
+      reason: keyProblem,
     };
   }
 
@@ -91,12 +122,38 @@ const loadPurchases = async () => {
   }
 };
 
-const getApiKey = () => {
-  if (Platform.OS === "android") {
-    return androidApiKey;
+const ensureRevenueCatConfigured = async (apiKey: string, initialUserId: string) => {
+  const Purchases = await loadPurchases();
+
+  if (configuredApiKey && configuredApiKey !== apiKey) {
+    throw new Error("RevenueCat was already configured with a different platform key.");
   }
 
-  return undefined;
+  if (!configurePromise) {
+    configurePromise = (async () => {
+      const isConfigured = await Purchases.isConfigured().catch(() => false);
+
+      if (!isConfigured) {
+        Purchases.configure({
+          apiKey,
+          appUserID: initialUserId,
+        });
+        configuredUserId = initialUserId;
+      } else {
+        configuredUserId = await Purchases.getAppUserID().catch(() => initialUserId);
+      }
+
+      configuredApiKey = apiKey;
+      return Purchases;
+    })().catch((error) => {
+      configurePromise = null;
+      configuredApiKey = null;
+      configuredUserId = null;
+      throw error;
+    });
+  }
+
+  return configurePromise;
 };
 
 export const configureRevenueCat = async (userId: string) => {
@@ -106,22 +163,41 @@ export const configureRevenueCat = async (userId: string) => {
     throw new Error(availability.reason);
   }
 
-  const Purchases = await loadPurchases();
   const apiKey = getApiKey();
 
   if (!apiKey) {
     throw new Error("RevenueCat API key is not configured for this platform.");
   }
 
+  const Purchases = await ensureRevenueCatConfigured(apiKey, userId);
+
   if (configuredUserId !== userId) {
-    Purchases.configure({
-      apiKey,
-      appUserID: userId,
-    });
+    await Purchases.logIn(userId);
     configuredUserId = userId;
   }
 
   return Purchases;
+};
+
+export const resetRevenueCatCustomer = async () => {
+  configuredUserId = null;
+
+  if (!isNativePlatform() || isExpoGo() || isDevelopmentBuild()) {
+    return;
+  }
+
+  const apiKey = getApiKey();
+
+  if (!apiKey || isRevenueCatTestKey(apiKey)) {
+    return;
+  }
+
+  const Purchases = await loadPurchases();
+  const isConfigured = await Purchases.isConfigured().catch(() => false);
+
+  if (isConfigured) {
+    await Purchases.logOut();
+  }
 };
 
 const formatPackage = (item: PurchasesPackage): FlashlyRevenueCatPackage => ({

@@ -72,11 +72,23 @@ EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY=pk_live_replace_me
 EXPO_PUBLIC_POSTHOG_KEY=phc_replace_me
 EXPO_PUBLIC_POSTHOG_HOST=https://us.i.posthog.com
 EXPO_PUBLIC_REVENUECAT_ANDROID_API_KEY=goog_replace_me
+EXPO_PUBLIC_REVENUECAT_IOS_API_KEY=appl_replace_me
 EXPO_PUBLIC_REVENUECAT_ENTITLEMENT_ID=pro
 EXPO_PUBLIC_SENTRY_DSN=https://public@sentry.example/project
 ```
 
 Never put backend secrets in app build env. Do not use `CLERK_SECRET_KEY`, `DATABASE_URL`, S3 secrets, NVIDIA keys, OCR keys, RevenueCat webhook secrets, or backend Sentry DSNs in the Expo client.
+
+For EAS builds, set the public RevenueCat SDK keys in the EAS dashboard or with the CLI. Preview and production Android builds must use the public Android SDK key from the RevenueCat app configured for `com.flashly.app`, not a key beginning with `test_`.
+
+```bash
+eas env:create --environment preview --name EXPO_PUBLIC_REVENUECAT_ANDROID_API_KEY --value goog_replace_me --visibility plaintext --force --non-interactive
+eas env:create --environment production --name EXPO_PUBLIC_REVENUECAT_ANDROID_API_KEY --value goog_replace_me --visibility plaintext --force --non-interactive
+eas env:create --environment preview --name EXPO_PUBLIC_REVENUECAT_ENTITLEMENT_ID --value pro --visibility plaintext --force --non-interactive
+eas env:create --environment production --name EXPO_PUBLIC_REVENUECAT_ENTITLEMENT_ID --value pro --visibility plaintext --force --non-interactive
+```
+
+Use `EXPO_PUBLIC_REVENUECAT_IOS_API_KEY` the same way when an iOS build is added. RevenueCat secret REST keys and webhook secrets belong only in backend/server environments.
 
 ## Build Profiles
 

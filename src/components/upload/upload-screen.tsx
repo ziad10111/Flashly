@@ -3,7 +3,7 @@ import * as FileSystem from "expo-file-system/legacy";
 import { SymbolView, type AndroidSymbol, type SFSymbol } from "expo-symbols";
 import semiBold from "expo-symbols/androidWeights/semiBold";
 import { Redirect, router } from "expo-router";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Alert, Pressable, ScrollView, Text, View } from "react-native";
 import Animated, { FadeInDown } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -28,6 +28,13 @@ import { createUploadJob } from "@/api/repositories/uploadRepository";
 import { PressableScale } from "@/components/animated/pressable-scale";
 import { AnimatedOwl } from "@/components/mascot/animated-owl";
 import { triggerSuccessHaptic } from "@/lib/feedback/haptics";
+import {
+  ROUTES,
+  createDeckRoute,
+  createSingleNavigationGuard,
+  getSafeDeckRoute,
+  logNavigation,
+} from "@/lib/navigation/routes";
 import {
   BACKGROUND_BATCH_CARD_COUNT,
   FIRST_BATCH_CARD_COUNT,
@@ -663,6 +670,7 @@ export function UploadScreen() {
   const lastTrialAlertMessage = useRef<string | null>(null);
   const generationDoneTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const generationInFlightRef = useRef(false);
+  const generationNavigationGuardRef = useRef(createSingleNavigationGuard());
   const isLargeSelectedPdf = isLargePdfUpload(selectedFile);
   const estimateNeedsOcr = Boolean(ocrRequired || (selectedFile && isSupportedImageUpload(selectedFile)));
   const stageFlow = useMemo(() => getStageFlow(ocrRequired, isLargeSelectedPdf), [isLargeSelectedPdf, ocrRequired]);
@@ -675,6 +683,33 @@ export function UploadScreen() {
     }),
     [insets.bottom, insets.top],
   );
+
+  const navigateToGeneratedDeck = useCallback((deckId: string, reason: string) => {
+    const to = createDeckRoute(deckId);
+    const navigationKey = `generation-complete:${deckId}`;
+
+    if (!generationNavigationGuardRef.current.shouldNavigate(navigationKey)) {
+      logNavigation({
+        action: "generation-complete-duplicate-navigation",
+        deckId,
+        reason,
+        to,
+      });
+      return;
+    }
+
+    logNavigation({
+      action: "generation-complete",
+      deckId,
+      reason,
+      to,
+    });
+    router.replace(to as never);
+  }, []);
+
+  useEffect(() => {
+    generationNavigationGuardRef.current.reset();
+  }, [idempotencyKey, selectedFile?.name, selectedFile?.uri]);
 
   useEffect(() => {
     if (status === "processing") {
@@ -757,11 +792,15 @@ export function UploadScreen() {
         return;
       }
 
-      completeMockGeneration();
+      const completedDeckId = completeMockGeneration();
+
+      if (completedDeckId) {
+        navigateToGeneratedDeck(completedDeckId, "mock-generation-complete");
+      }
     }, currentStage === "ocr-skipped" ? 650 : 900);
 
     return () => clearTimeout(timer);
-  }, [completeMockGeneration, currentStage, isBackendProcessing, setProcessingStage, stageFlow, status]);
+  }, [completeMockGeneration, currentStage, isBackendProcessing, navigateToGeneratedDeck, setProcessingStage, stageFlow, status]);
 
   useEffect(() => {
     if (!errorMessage?.toLowerCase().includes("free trial is complete")) {
@@ -780,7 +819,7 @@ export function UploadScreen() {
         { text: "Maybe later", style: "cancel" },
         {
           text: "Upgrade to Pro",
-          onPress: () => router.push("/upgrade" as never),
+          onPress: () => router.push(ROUTES.upgrade as never),
         },
       ],
     );
@@ -841,6 +880,7 @@ export function UploadScreen() {
     }
 
     if (!USE_BACKEND_API) {
+      generationNavigationGuardRef.current.reset();
       startMockProcessing();
       generationInFlightRef.current = false;
       return;
@@ -958,6 +998,11 @@ export function UploadScreen() {
       }
       triggerSuccessHaptic();
 
+      navigateToGeneratedDeck(
+        persistedDeckId,
+        isProgressivePdf ? "progressive-first-batch-ready" : "generation-complete",
+      );
+
       if (isProgressivePdf) {
         if (typeof __DEV__ !== "undefined" && __DEV__) {
           console.info("[Flashly Upload] partial deck created", {
@@ -967,8 +1012,6 @@ export function UploadScreen() {
             hasMore: generation.hasMore,
           });
         }
-
-        router.replace(`/deck/${persistedDeckId}` as never);
 
         // Background batches are requested while the app stays open; in database mode,
         // each successful batch is persisted by the backend and mirrored locally.
@@ -1005,15 +1048,22 @@ export function UploadScreen() {
   };
 
   const handleOpenDeck = () => {
-    if (!generatedDeckId) {
+    const route = getSafeDeckRoute(generatedDeckId);
+
+    if (!route) {
       return;
     }
 
-    router.push(`/deck/${generatedDeckId}` as never);
+    logNavigation({
+      action: "open-generated-deck",
+      deckId: generatedDeckId ?? undefined,
+      to: route,
+    });
+    router.push(route as never);
   };
 
   const handleChangeMaterialType = () => {
-    router.replace("/study-type" as never);
+    router.replace(ROUTES.studyType as never);
   };
 
   if (!hasHydrated) {
@@ -1025,7 +1075,7 @@ export function UploadScreen() {
   }
 
   if (!selectedStudyType) {
-    return <Redirect href={"/study-type" as never} />;
+    return <Redirect href={ROUTES.studyType as never} />;
   }
 
   const activeStageIndex = stageFlow.findIndex((item) => item.stage === currentStage);
@@ -1163,7 +1213,7 @@ export function UploadScreen() {
               <PressableScale
                 className="mt-4 items-center justify-center rounded-[22px] bg-[#FFE8E8] px-5 py-3"
                 haptic
-                onPress={() => router.push("/upgrade" as never)}
+                onPress={() => router.push(ROUTES.upgrade as never)}
               >
                 <Text selectable={false} className="font-poppins-semibold text-[14px] leading-[20px] text-[#C43D32]">
                   Upgrade to Pro

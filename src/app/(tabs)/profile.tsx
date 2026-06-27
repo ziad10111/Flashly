@@ -14,6 +14,8 @@ import { FLASHLY_AUTH_MODE } from "@/api/config";
 import { PressableScale } from "@/components/animated/pressable-scale";
 import { useFlashlyDecks } from "@/hooks/useFlashlyDecks";
 import { setApiAuthTokenProvider } from "@/api/authToken";
+import { resetRevenueCatCustomer } from "@/lib/billing/revenuecatPurchases";
+import { ROUTES, logNavigation } from "@/lib/navigation/routes";
 import { useActiveDeckStore } from "@/store/useActiveDeckStore";
 import { useFlashlyAssistantStore } from "@/store/useFlashlyAssistantStore";
 import { useFlashlyProgressStore } from "@/store/useFlashlyProgressStore";
@@ -284,9 +286,18 @@ export default function ProfileTabScreen() {
         await signOut();
       }
 
+      await resetRevenueCatCustomer().catch((error) => {
+        console.warn("RevenueCat sign out cleanup failed", error);
+      });
       clearFlashlyLocalState();
       profileRouter.dismissAll();
-      profileRouter.replace("/sign-in");
+      logNavigation({
+        action: "sign-out-success",
+        from: ROUTES.profile,
+        reason: "profile sign out confirmed",
+        to: ROUTES.signIn,
+      });
+      profileRouter.replace(ROUTES.signIn as never);
     } catch (error) {
       console.warn("Sign out failed", error);
       Alert.alert("Sign out failed", "We couldn't sign you out. Please try again.");
@@ -538,7 +549,7 @@ export default function ProfileTabScreen() {
           fallback="PRO"
           icon={{ android: "workspace_premium", ios: "star.circle.fill" }}
           label="Manage Subscription"
-          onPress={() => router.push("/upgrade" as never)}
+          onPress={() => router.push(ROUTES.upgrade as never)}
         />
         <AccountAction
           accent="#5D678A"

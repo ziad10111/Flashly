@@ -3,6 +3,7 @@ import { Image } from "expo-image";
 import { router } from "expo-router";
 import { useState } from "react";
 import {
+  Alert,
   Pressable,
   ScrollView,
   Text,
@@ -11,8 +12,15 @@ import {
 } from "react-native";
 
 import { images } from "@/constants/images";
+import { setApiAuthTokenProvider } from "@/api/authToken";
 import { FLASHLY_AUTH_MODE } from "@/api/config";
 import { popularStudyTypes } from "@/data/studyTypes";
+import { resetRevenueCatCustomer } from "@/lib/billing/revenuecatPurchases";
+import { ROUTES, logNavigation } from "@/lib/navigation/routes";
+import { useActiveDeckStore } from "@/store/useActiveDeckStore";
+import { useFlashlyAssistantStore } from "@/store/useFlashlyAssistantStore";
+import { useFlashlyProgressStore } from "@/store/useFlashlyProgressStore";
+import { useFlashlyUploadStore } from "@/store/useFlashlyUploadStore";
 import { useStudySelectionStore } from "@/store/useStudySelectionStore";
 import type { StudyType } from "@/types/study";
 
@@ -109,6 +117,7 @@ export default function StudyTypeScreen() {
   const { signOut } = useClerk();
   const setSelectedStudyType = useStudySelectionStore((state) => state.setSelectedStudyType);
   const [query, setQuery] = useState("");
+  const [isSigningOut, setIsSigningOut] = useState(false);
   const [selectedId, setSelectedId] = useState(popularStudyTypes[0]?.id ?? "");
   const trimmedQuery = query.trim().toLowerCase();
   const filteredStudyTypes = !trimmedQuery
@@ -118,11 +127,39 @@ export default function StudyTypeScreen() {
         return haystack.includes(trimmedQuery);
       });
   const handleBackPress = async () => {
-    if (FLASHLY_AUTH_MODE === "clerk") {
-      await signOut();
+    if (isSigningOut) {
+      return;
     }
 
-    router.replace("/sign-in");
+    setIsSigningOut(true);
+
+    try {
+      if (FLASHLY_AUTH_MODE === "clerk") {
+        await signOut();
+      }
+
+      await resetRevenueCatCustomer().catch((error) => {
+        console.warn("RevenueCat sign out cleanup failed", error);
+      });
+      setApiAuthTokenProvider(null);
+      useStudySelectionStore.getState().clearSelectedStudyType();
+      useActiveDeckStore.getState().resetActiveDeck();
+      useFlashlyProgressStore.getState().resetProgress();
+      useFlashlyUploadStore.getState().resetAllUploadState();
+      useFlashlyAssistantStore.getState().resetAssistant();
+      logNavigation({
+        action: "study-type-sign-out",
+        from: ROUTES.studyType,
+        reason: "back from required study type selection",
+        to: ROUTES.signIn,
+      });
+      router.replace(ROUTES.signIn as never);
+    } catch (error) {
+      console.warn("Sign out failed", error);
+      Alert.alert("Sign out failed", "We couldn't sign you out. Please try again.");
+    } finally {
+      setIsSigningOut(false);
+    }
   };
   const handleContinuePress = () => {
     const selectedStudyType =
@@ -133,7 +170,13 @@ export default function StudyTypeScreen() {
     }
 
     setSelectedStudyType(selectedStudyType);
-    router.push("/upload" as never);
+    logNavigation({
+      action: "study-type-selected",
+      from: ROUTES.studyType,
+      reason: selectedStudyType.id,
+      to: ROUTES.upload,
+    });
+    router.replace(ROUTES.upload as never);
   };
 
   return (
@@ -153,6 +196,7 @@ export default function StudyTypeScreen() {
         <View className="min-h-[72px] flex-row items-center justify-center">
           <Pressable
             className="absolute left-0 h-14 w-14 items-start justify-center rounded-full"
+            disabled={isSigningOut}
             onPress={handleBackPress}
           >
             <Text selectable className="font-poppins text-[44px] leading-[44px] text-ink">

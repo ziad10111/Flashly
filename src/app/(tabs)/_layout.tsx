@@ -4,6 +4,7 @@ import { ActivityIndicator, View } from "react-native";
 
 import { FLASHLY_AUTH_MODE } from "@/api/config";
 import { FlashlyTabBar } from "@/components/navigation/flashly-tab-bar";
+import { ROUTES } from "@/lib/navigation/routes";
 import { useStudySelectionStore } from "@/store/useStudySelectionStore";
 import { colors } from "@/theme";
 
@@ -21,11 +22,11 @@ export default function TabsLayout() {
   }
 
   if (FLASHLY_AUTH_MODE === "clerk" && !isSignedIn) {
-    return <Redirect href="/sign-in" />;
+    return <Redirect href={ROUTES.signIn as never} />;
   }
 
   if (!selectedStudyType) {
-    return <Redirect href={"/study-type" as never} />;
+    return <Redirect href={ROUTES.studyType as never} />;
   }
 
   return (

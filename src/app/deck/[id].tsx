@@ -1,6 +1,6 @@
 import { SymbolView, type AndroidSymbol, type SFSymbol } from "expo-symbols";
 import semiBold from "expo-symbols/androidWeights/semiBold";
-import { router, useLocalSearchParams, useRouter } from "expo-router";
+import { Redirect, router, useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Alert, ScrollView, StyleSheet, Text, View } from "react-native";
 import Animated, { FadeInDown } from "react-native-reanimated";
@@ -15,6 +15,7 @@ import { formatPercent } from "@/lib/deck-utils";
 import { triggerLightHaptic, triggerSuccessHaptic } from "@/lib/feedback/haptics";
 import { celebrateXp } from "@/lib/feedback/xpCelebration";
 import { safeBack } from "@/lib/navigation/safeBack";
+import { ROUTES, createDeckRoute, createReviewRoute, getInvalidDeckFallbackRoute, logNavigation } from "@/lib/navigation/routes";
 import {
   BACKGROUND_BATCH_CARD_COUNT,
   MAX_PROGRESSIVE_PDF_CARDS,
@@ -212,7 +213,7 @@ function StatCard({
 function StateCard({ title, body }: { title: string; body: string }) {
   return (
     <ScrollView className="bg-lingua-background" contentInsetAdjustmentBehavior="automatic" contentContainerStyle={styles.stateContainer}>
-      <PressableScale className="h-12 w-12 items-center justify-center rounded-full bg-white" haptic onPress={() => safeBack("/decks")} style={styles.cardShadow}>
+      <PressableScale className="h-12 w-12 items-center justify-center rounded-full bg-white" haptic onPress={() => safeBack(ROUTES.decks as never)} style={styles.cardShadow}>
         <Text selectable={false} className="font-poppins-semibold text-[30px] leading-[32px] text-ink">
           {"<"}
         </Text>
@@ -240,6 +241,7 @@ export default function DeckDetailScreen() {
   const previousGenerationStatusRef = useRef<string | undefined>(undefined);
   const setActiveDeckId = useActiveDeckStore((state) => state.setActiveDeckId);
   const progress = useFlashlyProgressStore((state) => (id ? state.deckProgressById[id] : undefined));
+  const isDeletedDeck = useFlashlyProgressStore((state) => (id ? state.deletedDeckIds.includes(id) : false));
   const generatedDecks = useFlashlyUploadStore((state) => state.generatedDecks);
   const generatedCardsByDeckId = useFlashlyUploadStore((state) => state.generatedCardsByDeckId);
   const generatedDeck = useMemo(
@@ -275,7 +277,7 @@ export default function DeckDetailScreen() {
     let isMounted = true;
 
     const loadDeck = async () => {
-      if (!id) {
+      if (!id || isDeletedDeck) {
         setLoadState("not-found");
         return;
       }
@@ -310,7 +312,20 @@ export default function DeckDetailScreen() {
     return () => {
       isMounted = false;
     };
-  }, [generatedCardsByDeckId, generatedDecks, id]);
+  }, [generatedCardsByDeckId, generatedDecks, id, isDeletedDeck]);
+
+  useEffect(() => {
+    if (loadState !== "not-found") {
+      return;
+    }
+
+    logNavigation({
+      action: "invalid-deck-redirect",
+      deckId: id,
+      reason: isDeletedDeck ? "deck tombstone present" : "deck missing",
+      to: getInvalidDeckFallbackRoute(),
+    });
+  }, [id, isDeletedDeck, loadState]);
 
   const stats = useMemo(() => {
     if (!deckResponse) {
@@ -350,8 +365,12 @@ export default function DeckDetailScreen() {
     return <StateCard title="Could not load deck" body="Something went wrong while reading local deck data." />;
   }
 
+  if (loadState === "not-found") {
+    return <Redirect href={getInvalidDeckFallbackRoute() as never} />;
+  }
+
   if (!deckResponse || !stats) {
-    return <StateCard title="Deck not found" body="This generated deck is not available on this device." />;
+    return <Redirect href={getInvalidDeckFallbackRoute() as never} />;
   }
 
   const { deck, cards } = deckResponse;
@@ -417,9 +436,21 @@ export default function DeckDetailScreen() {
     try {
       await deleteDeck(deck.id);
       setActiveDeckId("");
-      deckRouter.replace("/decks" as never);
+      logNavigation({
+        action: "deck-delete-success",
+        deckId: deck.id,
+        reason: "deck removed locally or remotely",
+        to: ROUTES.decks,
+      });
+      deckRouter.replace(ROUTES.decks as never);
     } catch (error) {
       console.warn("Delete deck failed", error);
+      logNavigation({
+        action: "deck-delete-failed",
+        deckId: deck.id,
+        reason: "delete repository rejected",
+        to: createDeckRoute(deck.id),
+      });
       Alert.alert("Could not delete deck", "The deck was not deleted. Please try again.");
     } finally {
       setIsDeleting(false);
@@ -448,7 +479,7 @@ export default function DeckDetailScreen() {
   return (
     <ScrollView className="bg-lingua-background" contentContainerStyle={contentStyle} contentInsetAdjustmentBehavior="automatic" showsVerticalScrollIndicator={false}>
       <Animated.View entering={FadeInDown.duration(220)} className="flex-row items-center">
-        <PressableScale className="h-12 w-12 items-center justify-center rounded-full bg-white" haptic onPress={() => safeBack("/decks")} style={styles.cardShadow}>
+        <PressableScale className="h-12 w-12 items-center justify-center rounded-full bg-white" haptic onPress={() => safeBack(ROUTES.decks as never)} style={styles.cardShadow}>
           <BackIcon />
         </PressableScale>
         <View className="ml-4 flex-1">
@@ -596,14 +627,14 @@ export default function DeckDetailScreen() {
       </Animated.View>
 
       <Animated.View entering={FadeInDown.delay(310).duration(220)} className="gap-2 rounded-[28px] bg-white p-3" style={styles.cardShadow}>
-        <PressableScale className="items-center justify-center rounded-[24px] bg-lingua-purple px-6 py-4" haptic onPress={() => router.push(`/review/${deck.id}` as never)}>
+        <PressableScale className="items-center justify-center rounded-[24px] bg-lingua-purple px-6 py-4" haptic onPress={() => router.push(createReviewRoute(deck.id) as never)}>
           <Text selectable={false} className="font-poppins-semibold text-[20px] leading-[26px] text-white">
             {primaryLabel}
           </Text>
         </PressableScale>
 
         {stats.weakCount > 0 ? (
-          <PressableScale className="items-center justify-center rounded-[24px] bg-[#FFF0F0] px-6 py-4" haptic onPress={() => router.push(`/review/${deck.id}?mode=weak` as never)}>
+          <PressableScale className="items-center justify-center rounded-[24px] bg-[#FFF0F0] px-6 py-4" haptic onPress={() => router.push(createReviewRoute(deck.id, "weak") as never)}>
             <Text selectable={false} className="font-poppins-semibold text-[18px] leading-[24px] text-[#FF4D4F]">
               Review Weak Cards ({weakCardsLabel})
             </Text>

@@ -9,6 +9,7 @@ import { ActivityIndicator, Pressable, ScrollView, Text, TextInput, View, useWin
 import { FLASHLY_AUTH_MODE } from "@/api/config";
 import { VerificationCodeModal } from "@/components/auth/verification-code-modal";
 import { safeBack } from "@/lib/navigation/safeBack";
+import { ROUTES, getPostAuthRoute, logNavigation } from "@/lib/navigation/routes";
 import { useStudySelectionStore } from "@/store/useStudySelectionStore";
 import { colors } from "@/theme";
 
@@ -100,7 +101,8 @@ export function AuthScreen({ mode }: AuthScreenProps) {
   const primaryLabel = isSignUp ? "Sign Up" : "Sign In";
   const footerPrompt = isSignUp ? "Already have an account?" : "Need an account?";
   const footerAction = isSignUp ? "Log in" : "Sign up";
-  const footerHref = isSignUp ? "/sign-in" : "/sign-up";
+  const footerHref = isSignUp ? ROUTES.signIn : ROUTES.signUp;
+  const postAuthRoute = getPostAuthRoute(Boolean(selectedStudyType));
   const panelWidth = Math.min(width - 24, 500);
   const mascotWidth = Math.min(width * 0.42, 168);
   const ssoRedirectUrl = makeRedirectUri({
@@ -138,7 +140,13 @@ export function AuthScreen({ mode }: AuthScreenProps) {
           return;
         }
 
-        router.replace(selectedStudyType ? ("/" as never) : ("/study-type" as never));
+        logNavigation({
+          action: "sign-in-success",
+          from: ROUTES.signIn,
+          reason: "email password session complete",
+          to: postAuthRoute,
+        });
+        router.replace(postAuthRoute as never);
       },
     });
   };
@@ -154,7 +162,13 @@ export function AuthScreen({ mode }: AuthScreenProps) {
           return;
         }
 
-        router.replace(selectedStudyType ? ("/" as never) : ("/study-type" as never));
+        logNavigation({
+          action: "sign-up-success",
+          from: ROUTES.signUp,
+          reason: "email verification complete",
+          to: postAuthRoute,
+        });
+        router.replace(postAuthRoute as never);
       },
     });
   };
@@ -291,7 +305,13 @@ export function AuthScreen({ mode }: AuthScreenProps) {
 
       if (createdSessionId && setActive) {
         await setActive({ session: createdSessionId });
-        router.replace(selectedStudyType ? ("/" as never) : ("/study-type" as never));
+        logNavigation({
+          action: "oauth-success",
+          from: mode === "sign-up" ? ROUTES.signUp : ROUTES.signIn,
+          reason: strategy,
+          to: postAuthRoute,
+        });
+        router.replace(postAuthRoute as never);
       }
     } catch (error) {
       setErrorMessage(formatClerkError(error));
@@ -319,7 +339,7 @@ export function AuthScreen({ mode }: AuthScreenProps) {
   }, [code, isSubmitting, isVerificationVisible, submitVerification]);
 
   if (FLASHLY_AUTH_MODE === "mock") {
-    return <Redirect href={selectedStudyType ? ("/" as never) : ("/study-type" as never)} />;
+    return <Redirect href={postAuthRoute as never} />;
   }
 
   if (!isLoaded) {
@@ -335,7 +355,7 @@ export function AuthScreen({ mode }: AuthScreenProps) {
       );
     }
 
-    return <Redirect href={selectedStudyType ? ("/" as never) : ("/study-type" as never)} />;
+    return <Redirect href={postAuthRoute as never} />;
   }
 
   return (
@@ -353,7 +373,7 @@ export function AuthScreen({ mode }: AuthScreenProps) {
         showsVerticalScrollIndicator={false}
       >
         <View className="min-h-full rounded-[28px] bg-white px-5 pb-6 pt-4 shadow-card" style={{ width: panelWidth }}>
-          <Pressable className="h-10 w-10 items-start justify-center rounded-full" onPress={() => safeBack("/onboarding")}>
+          <Pressable className="h-10 w-10 items-start justify-center rounded-full" onPress={() => safeBack(ROUTES.onboarding as never)}>
             <Text selectable className="font-poppins text-[34px] leading-[36px] text-ink">
               {"\u2039"}
             </Text>

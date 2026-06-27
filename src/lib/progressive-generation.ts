@@ -1,5 +1,7 @@
 import { generateFlashcardsForMaterial } from "@/api/repositories/materialRepository";
+import { shouldApplyGeneratedDeckMutation } from "@/api/repositories/deckDeletion";
 import { triggerSuccessHaptic, triggerWarningHaptic } from "@/lib/feedback/haptics";
+import { useFlashlyProgressStore } from "@/store/useFlashlyProgressStore";
 import { useFlashlyUploadStore } from "@/store/useFlashlyUploadStore";
 
 export const FIRST_BATCH_CARD_COUNT = 3;
@@ -37,10 +39,25 @@ export const runRemainingGeneratedDeckBatches = async ({
   let nextStartQuestionIndex = startQuestionIndex;
   let batchIndex = Math.floor(startQuestionIndex / batchSize) + 1;
   let hasMore = true;
+  const isDeleted = () =>
+    !shouldApplyGeneratedDeckMutation({
+      deckId,
+      deletedDeckIds: useFlashlyProgressStore.getState().deletedDeckIds,
+    });
+
+  if (isDeleted()) {
+    logProgressiveGeneration({ deckId, status: "deleted-before-start" });
+    return;
+  }
 
   store.markGeneratedDeckGenerating(deckId);
 
   while (hasMore) {
+    if (isDeleted()) {
+      logProgressiveGeneration({ batchIndex, deckId, status: "deleted-before-batch" });
+      return;
+    }
+
     try {
       logProgressiveGeneration({
         batchIndex,
@@ -63,6 +80,18 @@ export const runRemainingGeneratedDeckBatches = async ({
         requestedCardCount: batchSize,
         idempotencyKey,
       });
+
+      if (isDeleted()) {
+        logProgressiveGeneration({
+          batchIndex,
+          batchOffset: nextStartQuestionIndex,
+          deckId,
+          generatedCount: batchGeneration.cards.length,
+          status: "deleted-after-response",
+        });
+        return;
+      }
+
       const nextCursor = nextStartQuestionIndex + batchSize;
       const appendResult = useFlashlyUploadStore
         .getState()
@@ -98,6 +127,11 @@ export const runRemainingGeneratedDeckBatches = async ({
 
       return;
     }
+  }
+
+  if (isDeleted()) {
+    logProgressiveGeneration({ deckId, status: "deleted-before-complete" });
+    return;
   }
 
   useFlashlyUploadStore.getState().markGeneratedDeckComplete(deckId);

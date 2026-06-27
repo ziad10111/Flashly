@@ -5,6 +5,7 @@ import { ActivityIndicator, Text, View } from "react-native";
 import { useAuth } from "@clerk/expo";
 
 import { FLASHLY_AUTH_MODE } from "@/api/config";
+import { ROUTES, getPostAuthRoute } from "@/lib/navigation/routes";
 import { useStudySelectionStore } from "@/store/useStudySelectionStore";
 import { colors } from "@/theme";
 
@@ -14,17 +15,18 @@ export default function SsoCallbackScreen() {
   const { isLoaded, isSignedIn } = useAuth();
   const hasHydrated = useStudySelectionStore((state) => state.hasHydrated);
   const selectedStudyType = useStudySelectionStore((state) => state.selectedStudyType);
+  const postAuthRoute = getPostAuthRoute(Boolean(selectedStudyType));
 
   if (FLASHLY_AUTH_MODE === "mock") {
-    return <Redirect href={selectedStudyType ? ("/" as never) : ("/study-type" as never)} />;
+    return <Redirect href={postAuthRoute as never} />;
   }
 
   if (isLoaded && hasHydrated && isSignedIn) {
-    return <Redirect href={selectedStudyType ? ("/" as never) : ("/study-type" as never)} />;
+    return <Redirect href={postAuthRoute as never} />;
   }
 
   if (isLoaded && !isSignedIn) {
-    return <Redirect href={"/sign-in" as never} />;
+    return <Redirect href={ROUTES.signIn as never} />;
   }
 
   return (

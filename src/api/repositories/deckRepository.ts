@@ -8,6 +8,13 @@ import { useFlashlyUploadStore } from "@/store/useFlashlyUploadStore";
 import type { FlashcardDTO, GetDeckResponse, GetDecksResponse } from "../contracts";
 import { toDeckDTO, toFlashcardDTO } from "./adapters/deckAdapters";
 import { withBackendFallback } from "./backendSwitch";
+import {
+  classifyDeckForDeletion,
+  createDeckDeletionOperationRegistry,
+  createDeckDeletionLogPayload,
+  shouldTreatBackendDeleteErrorAsSuccessfulCleanup,
+  type DeckDeletionClassification,
+} from "./deckDeletion";
 
 // Local/mock repository. Replace internals with backend fetch calls later.
 // Do not add secrets, AI calls, OCR logic, or file parsing here.
@@ -105,20 +112,32 @@ const getBackendCardsForDeck = async (deckId: string): Promise<FlashcardDTO[]> =
 const isDeleteDeckResponse = (value: unknown): value is { ok: true } =>
   Boolean(value && typeof value === "object" && (value as { ok?: unknown }).ok === true);
 
-const isMockOrLocalDeckId = (deckId: string) =>
-  deckId.startsWith("ai-generated-deck-") ||
-  deckId.includes("mock-material") ||
-  deckId.includes("mock-upload");
+const deckDeleteOperations = createDeckDeletionOperationRegistry();
 
-const shouldDeleteDeckThroughBackend = ({
-  deckId,
-  hasBackendGenerationJob,
-  hasLocalDeck,
-}: {
-  deckId: string;
-  hasBackendGenerationJob: boolean;
-  hasLocalDeck: boolean;
-}) => USE_BACKEND_API && !isMockOrLocalDeckId(deckId) && (!hasLocalDeck || hasBackendGenerationJob);
+const logDeckDeletion = (
+  event: "start" | "local-cleanup" | "backend-404" | "failed" | "complete",
+  classification: DeckDeletionClassification,
+  meta: Parameters<typeof createDeckDeletionLogPayload>[1] = {},
+  extra: Record<string, unknown> = {},
+) => {
+  if (typeof __DEV__ === "undefined" || !__DEV__) {
+    return;
+  }
+
+  const payload = {
+    event,
+    ...createDeckDeletionLogPayload(classification, meta),
+    reason: classification.reason,
+    ...extra,
+  };
+
+  if (event === "backend-404" || event === "failed") {
+    console.warn("[Flashly Decks] deleteDeck", payload);
+    return;
+  }
+
+  console.info("[Flashly Decks] deleteDeck", payload);
+};
 
 export const getDecks = async (): Promise<GetDecksResponse> =>
   withBackendFallback({
@@ -141,86 +160,192 @@ export const getCardsForDeck = async (deckId: string): Promise<FlashcardDTO[]> =
     label: `getCardsForDeck(${deckId})`,
   });
 
-export const deleteDeck = async (deckId: string): Promise<void> => {
+type DeckDeletionStateSnapshot = {
+  activeDeckId: string;
+  assistant: {
+    activeDeckId: ReturnType<typeof useFlashlyAssistantStore.getState>["activeDeckId"];
+    conversationsByDeckId: ReturnType<typeof useFlashlyAssistantStore.getState>["conversationsByDeckId"];
+  };
+  progress: Pick<
+    ReturnType<typeof useFlashlyProgressStore.getState>,
+    "completedDeckIds" | "dailyReviewProgress" | "deletedDeckIds" | "deckProgressById" | "reviewSessionHistory" | "totalXp"
+  >;
+  upload: Pick<
+    ReturnType<typeof useFlashlyUploadStore.getState>,
+    | "currentStage"
+    | "errorMessage"
+    | "generatedCardsByDeckId"
+    | "generatedDeckId"
+    | "generatedDecks"
+    | "idempotencyKey"
+    | "materialId"
+    | "progressPercentage"
+    | "status"
+    | "uploadJobId"
+  >;
+};
+
+const createDeletionStateSnapshot = (): DeckDeletionStateSnapshot => {
   const uploadStore = useFlashlyUploadStore.getState();
   const progressStore = useFlashlyProgressStore.getState();
-  const uploadSnapshot = {
-    generatedCardsByDeckId: uploadStore.generatedCardsByDeckId,
-    generatedDeckId: uploadStore.generatedDeckId,
-    generatedDecks: uploadStore.generatedDecks,
-  };
-  const localGeneratedDeck = uploadStore.generatedDecks.find((deck) => deck.id === deckId);
-  const localDeck = getAllDecks(uploadStore.generatedDecks).find((deck) => deck.id === deckId);
-  const isBackendBackedDeck = shouldDeleteDeckThroughBackend({
-    deckId,
-    hasBackendGenerationJob: Boolean(localGeneratedDeck?.generationJobId),
-    hasLocalDeck: Boolean(localDeck),
-  });
-  const progressSnapshot = {
-    completedDeckIds: progressStore.completedDeckIds,
-    deletedDeckIds: progressStore.deletedDeckIds,
-    deckProgressById: progressStore.deckProgressById,
-    reviewSessionHistory: progressStore.reviewSessionHistory,
-    totalXp: progressStore.totalXp,
-  };
-  const activeDeckSnapshot = useActiveDeckStore.getState().activeDeckId;
-  const assistantSnapshot = {
-    activeDeckId: useFlashlyAssistantStore.getState().activeDeckId,
-    conversationsByDeckId: useFlashlyAssistantStore.getState().conversationsByDeckId,
-  };
+  const assistantStore = useFlashlyAssistantStore.getState();
 
-  uploadStore.removeGeneratedDeck(deckId);
+  return {
+    activeDeckId: useActiveDeckStore.getState().activeDeckId,
+    assistant: {
+      activeDeckId: assistantStore.activeDeckId,
+      conversationsByDeckId: assistantStore.conversationsByDeckId,
+    },
+    progress: {
+      completedDeckIds: progressStore.completedDeckIds,
+      dailyReviewProgress: progressStore.dailyReviewProgress,
+      deletedDeckIds: progressStore.deletedDeckIds,
+      deckProgressById: progressStore.deckProgressById,
+      reviewSessionHistory: progressStore.reviewSessionHistory,
+      totalXp: progressStore.totalXp,
+    },
+    upload: {
+      currentStage: uploadStore.currentStage,
+      errorMessage: uploadStore.errorMessage,
+      generatedCardsByDeckId: uploadStore.generatedCardsByDeckId,
+      generatedDeckId: uploadStore.generatedDeckId,
+      generatedDecks: uploadStore.generatedDecks,
+      idempotencyKey: uploadStore.idempotencyKey,
+      materialId: uploadStore.materialId,
+      progressPercentage: uploadStore.progressPercentage,
+      status: uploadStore.status,
+      uploadJobId: uploadStore.uploadJobId,
+    },
+  };
+};
+
+const restoreDeletionStateSnapshot = (snapshot: DeckDeletionStateSnapshot) => {
+  useFlashlyUploadStore.setState(snapshot.upload);
+  useFlashlyProgressStore.setState(snapshot.progress);
+  useActiveDeckStore.setState({ activeDeckId: snapshot.activeDeckId });
+  useFlashlyAssistantStore.setState(snapshot.assistant);
+};
+
+const cleanupDeckLocally = (deckId: string) => {
+  const progressBeforeCleanup = useFlashlyProgressStore.getState();
+  const uploadBeforeCleanup = useFlashlyUploadStore.getState();
+  const assistantBeforeCleanup = useFlashlyAssistantStore.getState();
+  const activeDeckIdBeforeCleanup = useActiveDeckStore.getState().activeDeckId;
+
   useFlashlyProgressStore.getState().deleteDeckProgress(deckId, { hideDeck: true });
+  useFlashlyUploadStore.getState().removeGeneratedDeck(deckId);
   useFlashlyAssistantStore.getState().clearConversation(deckId);
 
-  if (activeDeckSnapshot === deckId) {
+  if (activeDeckIdBeforeCleanup === deckId) {
     useActiveDeckStore.getState().setActiveDeckId("");
   }
 
-  if (assistantSnapshot.activeDeckId === deckId) {
+  if (assistantBeforeCleanup.activeDeckId === deckId) {
     useFlashlyAssistantStore.getState().setActiveDeckId(null);
   }
 
-  if (!isBackendBackedDeck) {
+  const progressAfterCleanup = useFlashlyProgressStore.getState();
+  const uploadAfterCleanup = useFlashlyUploadStore.getState();
+  const assistantAfterCleanup = useFlashlyAssistantStore.getState();
+
+  return {
+    activeDeckCleared: activeDeckIdBeforeCleanup === deckId && useActiveDeckStore.getState().activeDeckId !== deckId,
+    assistantCleared:
+      Boolean(assistantBeforeCleanup.conversationsByDeckId[deckId]) &&
+      !assistantAfterCleanup.conversationsByDeckId[deckId],
+    generatedCardsRemoved: Boolean(uploadBeforeCleanup.generatedCardsByDeckId[deckId]) && !uploadAfterCleanup.generatedCardsByDeckId[deckId],
+    generatedDeckRemoved:
+      uploadBeforeCleanup.generatedDecks.some((deck) => deck.id === deckId) &&
+      !uploadAfterCleanup.generatedDecks.some((deck) => deck.id === deckId),
+    progressRemoved:
+      Boolean(progressBeforeCleanup.deckProgressById[deckId]) && !progressAfterCleanup.deckProgressById[deckId],
+    tombstoned: progressAfterCleanup.deletedDeckIds.includes(deckId),
+  };
+};
+
+const deleteDeckThroughBackend = async (deckId: string) => {
+  const response = await apiRequest<{ ok: true }>(`/api/decks/${encodeURIComponent(deckId)}`, {
+    debugLabel: "deleteDeck",
+    debugMeta: { deckId },
+    method: "DELETE",
+  });
+
+  if (!isDeleteDeckResponse(response)) {
+    throw new Error("Flashly API did not confirm deck deletion.");
+  }
+
+  return 200;
+};
+
+const deleteDeckOnce = async (deckId: string): Promise<void> => {
+  const uploadStore = useFlashlyUploadStore.getState();
+  const localGeneratedDeck = uploadStore.generatedDecks.find((deck) => deck.id === deckId);
+  const localStaticDeck = localGeneratedDeck ? null : findLocalDeckById(deckId, []);
+  const classification = classifyDeckForDeletion({
+    deckId,
+    deckStatus: localGeneratedDeck?.status ?? localStaticDeck?.status,
+    generationJobId: localGeneratedDeck?.generationJobId,
+    generationStatus: localGeneratedDeck?.generationStatus,
+    hasLocalGeneratedDeck: Boolean(localGeneratedDeck),
+    hasLocalStaticDeck: Boolean(localStaticDeck),
+    useBackendApi: USE_BACKEND_API,
+  });
+  const snapshot = createDeletionStateSnapshot();
+
+  logDeckDeletion("start", classification, {
+    backendRequestAttempted: false,
+    localCleanupResult: "skipped",
+  });
+
+  if (!classification.backendRequestRequired) {
+    const cleanupResult = cleanupDeckLocally(deckId);
+    logDeckDeletion("complete", classification, {
+      backendRequestAttempted: false,
+      localCleanupResult: "success",
+    }, cleanupResult);
     return;
   }
 
   try {
-    const response = await apiRequest<{ ok: true }>(`/api/decks/${encodeURIComponent(deckId)}`, {
-      debugLabel: "deleteDeck",
-      debugMeta: { deckId },
-      method: "DELETE",
-    });
+    const backendStatus = await deleteDeckThroughBackend(deckId);
+    const cleanupResult = cleanupDeckLocally(deckId);
 
-    if (!isDeleteDeckResponse(response)) {
-      throw new Error("Flashly API did not confirm deck deletion.");
-    }
+    logDeckDeletion("complete", classification, {
+      backendRequestAttempted: true,
+      backendResponseStatus: backendStatus,
+      localCleanupResult: "success",
+    }, cleanupResult);
   } catch (error) {
-    if (error instanceof FlashlyApiError && error.status === 404) {
-      if (typeof __DEV__ !== "undefined" && __DEV__) {
-        console.warn("[Flashly Decks] deleteDeck already absent remotely", {
-          code: error.error.code,
-          deckId,
-          message: error.message,
-          status: error.status,
-        });
-      }
+    const backendStatus = error instanceof FlashlyApiError ? error.status : undefined;
+
+    if (shouldTreatBackendDeleteErrorAsSuccessfulCleanup(backendStatus)) {
+      const cleanupResult = cleanupDeckLocally(deckId);
+
+      logDeckDeletion("backend-404", classification, {
+        backendRequestAttempted: true,
+        backendResponseStatus: backendStatus,
+        localCleanupResult: "success",
+      }, {
+        ...cleanupResult,
+        message: "Deck already absent remotely; stale local copy removed.",
+      });
 
       return;
     }
 
-    useFlashlyUploadStore.setState(uploadSnapshot);
-    useFlashlyProgressStore.setState(progressSnapshot);
-    useActiveDeckStore.setState({ activeDeckId: activeDeckSnapshot });
-    useFlashlyAssistantStore.setState(assistantSnapshot);
-    if (typeof __DEV__ !== "undefined" && __DEV__) {
-      console.warn("[Flashly Decks] deleteDeck failed", {
-        code: error instanceof FlashlyApiError ? error.error.code : undefined,
-        deckId,
-        message: error instanceof Error ? error.message : "Unknown delete failure",
-        status: error instanceof FlashlyApiError ? error.status : undefined,
-      });
-    }
+    restoreDeletionStateSnapshot(snapshot);
+    logDeckDeletion("failed", classification, {
+      backendRequestAttempted: true,
+      backendResponseStatus: backendStatus,
+      localCleanupResult: "rolled-back",
+    }, {
+      code: error instanceof FlashlyApiError ? error.error.code : undefined,
+      message: error instanceof Error ? error.message : "Unknown delete failure",
+    });
     throw error;
   }
+};
+
+export const deleteDeck = async (deckId: string): Promise<void> => {
+  return deckDeleteOperations.run(deckId, () => deleteDeckOnce(deckId));
 };

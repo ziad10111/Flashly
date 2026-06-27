@@ -69,6 +69,8 @@ const requiredPresence = [
 const isPlaceholder = (value) =>
   /^(changeme|change_me|todo|replace_me|example|placeholder|server_side_|short_lived_|pk_test_or_live_key)/i.test(value);
 
+const isRevenueCatTestPublicKey = (value) => value?.trim().toLowerCase().startsWith("test_") ?? false;
+
 const validateUrl = (key, failures) => {
   const value = envValue(key);
 
@@ -101,7 +103,14 @@ const main = () => {
       failures.push(`${key} is required.`);
     } else if (isPlaceholder(value)) {
       failures.push(`${key} appears to contain a placeholder value.`);
+    } else if (key.startsWith("EXPO_PUBLIC_REVENUECAT_") && isRevenueCatTestPublicKey(value)) {
+      failures.push(`${key} must be the public platform SDK key, not a RevenueCat test_ key.`);
     }
+  }
+
+  const revenueCatIosApiKey = envValue("EXPO_PUBLIC_REVENUECAT_IOS_API_KEY");
+  if (isRevenueCatTestPublicKey(revenueCatIosApiKey)) {
+    failures.push("EXPO_PUBLIC_REVENUECAT_IOS_API_KEY must be the public platform SDK key, not a RevenueCat test_ key.");
   }
 
   const primaryStaticToken = envValue("FLASHLY_STAGING_TEST_TOKEN");

@@ -1,6 +1,10 @@
 import { useAuth } from "@clerk/expo";
-import type { SubscriptionStatusResponse } from "@/api/contracts";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { ActivityIndicator, Linking, Platform, Pressable, ScrollView, Text, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+
 import { apiRequest } from "@/api/client";
+import type { SubscriptionStatusResponse } from "@/api/contracts";
 import { PressableScale } from "@/components/animated/pressable-scale";
 import {
   customerHasProEntitlement,
@@ -10,17 +14,26 @@ import {
   restoreRevenueCatPurchases,
   type FlashlyRevenueCatPackage,
 } from "@/lib/billing/revenuecatPurchases";
+import {
+  UPGRADE_COPY,
+  canStartUpgradePurchase,
+  canStartUpgradeRestore,
+  getDisplayedUpgradePackages,
+  getPreferredUpgradePackageId,
+  getPurchaseButtonLabel,
+  getPurchaseFeedbackMessage,
+  getSelectedUpgradePackage,
+  getTrialSummaryLine,
+  getUpgradeBillingState,
+  getUpgradePackageBadge,
+  getUpgradePackageLabel,
+  getUpgradePackagePeriodLabel,
+  isPurchaseCancellation,
+  shouldReturnAfterEntitlementRefresh,
+} from "@/lib/billing/upgradePagePresentation";
 import { safeBack } from "@/lib/navigation/safeBack";
+import { ROUTES, logNavigation } from "@/lib/navigation/routes";
 import { colors } from "@/theme";
-import { router } from "expo-router";
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { ActivityIndicator, ScrollView, Text, View } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
-
-const formatLimit = (value: number | "unlimited") =>
-  value === "unlimited" ? "Unlimited" : value.toLocaleString();
-
-const formatMegabytes = (bytes: number) => `${Math.round(bytes / 1024 / 1024)} MB`;
 
 const fallbackSubscription: SubscriptionStatusResponse = {
   entitlementSource: "none",
@@ -41,54 +54,165 @@ const fallbackSubscription: SubscriptionStatusResponse = {
   },
 };
 
-const getPackageLabel = (item: FlashlyRevenueCatPackage) => {
-  const normalizedType = item.packageType.toLowerCase();
+const termsUrl = process.env.EXPO_PUBLIC_FLASHLY_TERMS_URL?.trim();
+const privacyUrl = process.env.EXPO_PUBLIC_FLASHLY_PRIVACY_URL?.trim();
 
-  if (normalizedType.includes("annual") || normalizedType.includes("year")) {
-    return "Yearly Pro";
+const getRenewalDisclaimer = () => {
+  if (Platform.OS === "android") {
+    return "Subscriptions renew automatically unless cancelled through your Google Play account.";
   }
 
-  if (normalizedType.includes("month")) {
-    return "Monthly Pro";
+  if (Platform.OS === "ios") {
+    return "Subscriptions renew automatically unless cancelled through your App Store account.";
   }
 
-  return item.title;
+  return UPGRADE_COPY.autoRenewDisclaimer;
 };
 
-const isRecurringProPackage = (item: FlashlyRevenueCatPackage) => {
-  const normalizedType = item.packageType.toLowerCase();
-  const normalizedProductId = item.productIdentifier.toLowerCase();
+const logBillingIssue = (payload: { action: string; reason?: string }) => {
+  if (typeof __DEV__ !== "undefined" && __DEV__) {
+    console.warn("[Flashly Billing]", payload);
+  }
+};
+
+function CheckRow({ label }: { label: string }) {
+  return (
+    <View className="flex-row items-center gap-3">
+      <View className="h-7 w-7 items-center justify-center rounded-full bg-lingua-purple">
+        <Text selectable={false} className="font-poppins-bold text-[13px] leading-[17px] text-white">
+          {"\u2713"}
+        </Text>
+      </View>
+      <Text selectable className="flex-1 text-[14px] leading-[20px] text-ink">
+        {label}
+      </Text>
+    </View>
+  );
+}
+
+function PackageOption({
+  disabled,
+  isSelected,
+  item,
+  onPress,
+}: {
+  disabled: boolean;
+  isSelected: boolean;
+  item: FlashlyRevenueCatPackage;
+  onPress: () => void;
+}) {
+  const badge = getUpgradePackageBadge(item);
 
   return (
-    normalizedType.includes("annual") ||
-    normalizedType.includes("year") ||
-    normalizedType.includes("month") ||
-    normalizedProductId.includes("year") ||
-    normalizedProductId.includes("annual") ||
-    normalizedProductId.includes("month")
+    <PressableScale
+      accessibilityRole="button"
+      accessibilityState={{ selected: isSelected }}
+      className={`rounded-[22px] border bg-white px-4 py-3 ${
+        isSelected ? "border-lingua-purple" : "border-[#ECE6FF]"
+      } ${disabled ? "opacity-70" : ""}`}
+      disabled={disabled}
+      haptic={!disabled}
+      onPress={onPress}
+      pressedScale={0.98}
+      style={isSelected ? { boxShadow: "0 8px 18px rgba(108, 78, 245, 0.12)" } : undefined}
+    >
+      <View className="flex-row items-center justify-between gap-3">
+        <View className="flex-1">
+          <View className="flex-row items-center gap-2">
+            <Text selectable className="font-poppins-bold text-[17px] leading-[23px] text-ink">
+              {getUpgradePackageLabel(item)}
+            </Text>
+            {badge ? (
+              <View className="rounded-full bg-[#F7F4FF] px-3 py-1">
+                <Text selectable={false} className="font-poppins-semibold text-[11px] leading-[15px] text-lingua-purple">
+                  {badge}
+                </Text>
+              </View>
+            ) : null}
+          </View>
+          <Text selectable className="mt-1 text-[13px] leading-[18px] text-muted">
+            Flashly Pro
+          </Text>
+        </View>
+        <View className="items-end">
+          <Text selectable className="font-poppins-bold text-[18px] leading-[24px] text-lingua-purple">
+            {item.priceString}
+          </Text>
+          <Text selectable className="text-[12px] leading-[17px] text-muted">
+            {getUpgradePackagePeriodLabel(item)}
+          </Text>
+        </View>
+      </View>
+    </PressableScale>
   );
-};
+}
+
+function LegalTextLink({ label, url }: { label: string; url?: string }) {
+  if (!url) {
+    return (
+      <Text selectable className="font-poppins-semibold text-[12px] leading-[18px] text-muted">
+        {label}
+      </Text>
+    );
+  }
+
+  return (
+    <Pressable
+      accessibilityRole="link"
+      onPress={() => {
+        Linking.openURL(url).catch(() => {
+          logBillingIssue({ action: "upgrade-legal-link-failed", reason: label });
+        });
+      }}
+    >
+      <Text selectable={false} className="font-poppins-semibold text-[12px] leading-[18px] text-lingua-purple">
+        {label}
+      </Text>
+    </Pressable>
+  );
+}
 
 export default function UpgradeScreen() {
   const { isLoaded, isSignedIn, userId } = useAuth();
   const insets = useSafeAreaInsets();
   const [subscription, setSubscription] = useState<SubscriptionStatusResponse>(fallbackSubscription);
   const [packages, setPackages] = useState<FlashlyRevenueCatPackage[]>([]);
+  const [selectedPackageId, setSelectedPackageId] = useState<string | null>(null);
+  const [purchasingPackageId, setPurchasingPackageId] = useState<string | null>(null);
   const [isLoadingSubscription, setIsLoadingSubscription] = useState(true);
   const [isLoadingPackages, setIsLoadingPackages] = useState(false);
-  const [activePackageId, setActivePackageId] = useState<string | null>(null);
+  const [hasAttemptedPackageLoad, setHasAttemptedPackageLoad] = useState(false);
+  const [packageLoadFailed, setPackageLoadFailed] = useState(false);
   const [isRestoring, setIsRestoring] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const availability = getRevenueCatAvailability(isLoaded && isSignedIn ? userId : null);
   const canUsePurchases = availability.available;
-  const recurringPackages = useMemo(() => packages.filter(isRecurringProPackage), [packages]);
-  const displayedPackages = recurringPackages.length > 0 ? recurringPackages : packages;
+  const availabilityReason = availability.available ? null : availability.reason;
+  const displayedPackages = useMemo(() => getDisplayedUpgradePackages(packages), [packages]);
+  const selectedPackage = getSelectedUpgradePackage(displayedPackages, selectedPackageId);
+  const trialSummary = getTrialSummaryLine(subscription);
+  const billingState = getUpgradeBillingState({
+    canUsePurchases,
+    hasAttemptedPackageLoad,
+    isLoadingPackages,
+    isLoadingSubscription,
+    isRestoring,
+    packageCount: displayedPackages.length,
+    packageLoadFailed,
+    planId: subscription.planId,
+    purchasingPackageId,
+  });
+  const canPurchase = canStartUpgradePurchase({ billingState, selectedPackageId });
+  const canRestore = canStartUpgradeRestore({ canUsePurchases, isRestoring, purchasingPackageId });
+  const isBusy = billingState === "purchasing" || billingState === "restoring";
+  const renewalDisclaimer = getRenewalDisclaimer();
   const contentStyle = useMemo(
     () => ({
-      paddingBottom: Math.max(insets.bottom + 28, 56),
-      paddingHorizontal: 20,
-      paddingTop: Math.max(insets.top + 14, 28),
+      gap: 14,
+      paddingBottom: Math.max(insets.bottom + 96, 132),
+      paddingHorizontal: 18,
+      paddingTop: Math.max(insets.top + 12, 24),
     }),
     [insets.bottom, insets.top],
   );
@@ -101,9 +225,14 @@ export default function UpgradeScreen() {
         debugLabel: "getSubscriptionStatus",
       });
       setSubscription(response);
-      setErrorMessage(null);
+      return response;
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : "Could not load subscription status.");
+      logBillingIssue({
+        action: "upgrade-subscription-refresh-failed",
+        reason: error instanceof Error ? error.message : "unknown",
+      });
+      setErrorMessage("We could not refresh your subscription status. Please try again.");
+      return null;
     } finally {
       setIsLoadingSubscription(false);
     }
@@ -112,19 +241,36 @@ export default function UpgradeScreen() {
   const loadPackages = useCallback(async () => {
     if (!canUsePurchases || !userId) {
       setPackages([]);
+      setHasAttemptedPackageLoad(false);
+      setPackageLoadFailed(false);
       return;
     }
 
     setIsLoadingPackages(true);
+    setHasAttemptedPackageLoad(false);
+    setPackageLoadFailed(false);
 
     try {
       const nextPackages = await getRevenueCatPackages(userId);
       setPackages(nextPackages);
-      setErrorMessage(nextPackages.length === 0 ? "No RevenueCat packages are available yet." : null);
+      setStatusMessage(null);
+      setErrorMessage(null);
+
+      if (nextPackages.length === 0) {
+        logBillingIssue({
+          action: "upgrade-offerings-unavailable",
+          reason: "no packages returned",
+        });
+      }
     } catch (error) {
       setPackages([]);
-      setErrorMessage(error instanceof Error ? error.message : "Could not load RevenueCat offerings.");
+      setPackageLoadFailed(true);
+      logBillingIssue({
+        action: "upgrade-offerings-unavailable",
+        reason: error instanceof Error ? error.message : "unknown",
+      });
     } finally {
+      setHasAttemptedPackageLoad(true);
       setIsLoadingPackages(false);
     }
   }, [canUsePurchases, userId]);
@@ -137,63 +283,125 @@ export default function UpgradeScreen() {
     void loadPackages();
   }, [loadPackages]);
 
-  const handlePurchase = async (item: FlashlyRevenueCatPackage) => {
-    if (!userId) {
-      setErrorMessage("Sign in to upgrade.");
+  useEffect(() => {
+    const preferredPackageId = getPreferredUpgradePackageId(displayedPackages);
+
+    setSelectedPackageId((current) =>
+      current && displayedPackages.some((item) => item.identifier === current) ? current : preferredPackageId,
+    );
+  }, [displayedPackages]);
+
+  useEffect(() => {
+    if (!availabilityReason || isLoadingSubscription) {
       return;
     }
 
-    setActivePackageId(item.identifier);
+    logBillingIssue({
+      action: "upgrade-offerings-unavailable",
+      reason: availabilityReason,
+    });
+  }, [availabilityReason, isLoadingSubscription]);
+
+  const returnAfterProActivation = (action: string) => {
+    logNavigation({
+      action,
+      from: ROUTES.upgrade,
+      reason: "pro entitlement active",
+      to: "previous-valid-route",
+    });
+    safeBack(ROUTES.profile as never);
+  };
+
+  const handlePurchase = async () => {
+    if (!selectedPackage || !userId || !canPurchase) {
+      return;
+    }
+
+    let shouldReturnToPreviousRoute = false;
+    setPurchasingPackageId(selectedPackage.identifier);
     setStatusMessage(null);
     setErrorMessage(null);
 
     try {
-      const customerInfo = await purchaseRevenueCatPackage(userId, item);
-      setStatusMessage(
-        customerHasProEntitlement(customerInfo)
-          ? "Purchase complete. Syncing your Pro plan..."
-          : "Purchase finished. Waiting for subscription sync...",
-      );
-      await refreshSubscription();
+      const customerInfo = await purchaseRevenueCatPackage(userId, selectedPackage);
+      const refreshedSubscription = await refreshSubscription();
+      shouldReturnToPreviousRoute = shouldReturnAfterEntitlementRefresh({
+        customerHasPro: customerHasProEntitlement(customerInfo),
+        refreshedPlanId: refreshedSubscription?.planId,
+      });
+
+      if (!shouldReturnToPreviousRoute) {
+        setStatusMessage("Purchase finished. Your Pro access is syncing. Try restoring purchases if it does not appear soon.");
+      }
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : "Purchase could not be completed.");
+      const message = getPurchaseFeedbackMessage(error);
+
+      if (isPurchaseCancellation(error)) {
+        setStatusMessage(message);
+      } else {
+        setErrorMessage(message);
+      }
+
+      logBillingIssue({
+        action: "upgrade-purchase-failed",
+        reason: error instanceof Error ? error.message : "cancelled-or-unknown",
+      });
     } finally {
-      setActivePackageId(null);
+      setPurchasingPackageId(null);
+    }
+
+    if (shouldReturnToPreviousRoute) {
+      returnAfterProActivation("purchase-success-return");
     }
   };
 
   const handleRestore = async () => {
-    if (!userId) {
-      setErrorMessage("Sign in to restore purchases.");
+    if (!userId || !canRestore) {
       return;
     }
 
+    let shouldReturnToPreviousRoute = false;
     setIsRestoring(true);
     setStatusMessage(null);
     setErrorMessage(null);
 
     try {
       const customerInfo = await restoreRevenueCatPurchases(userId);
-      setStatusMessage(
-        customerHasProEntitlement(customerInfo)
-          ? "Purchases restored. Syncing your Pro plan..."
-          : "No active Pro purchase was found for this account.",
-      );
-      await refreshSubscription();
+      const refreshedSubscription = await refreshSubscription();
+      shouldReturnToPreviousRoute = shouldReturnAfterEntitlementRefresh({
+        customerHasPro: customerHasProEntitlement(customerInfo),
+        refreshedPlanId: refreshedSubscription?.planId,
+      });
+
+      if (!shouldReturnToPreviousRoute) {
+        setStatusMessage(UPGRADE_COPY.noRestoredPurchaseMessage);
+      }
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : "Purchases could not be restored.");
+      setErrorMessage(UPGRADE_COPY.restoreErrorMessage);
+      logBillingIssue({
+        action: "upgrade-restore-failed",
+        reason: error instanceof Error ? error.message : "unknown",
+      });
     } finally {
       setIsRestoring(false);
     }
+
+    if (shouldReturnToPreviousRoute) {
+      returnAfterProActivation("restore-success-return");
+    }
   };
 
-  const benefits = [
-    "Keep uploading and generating after your 3-day free trial",
-    `${formatMegabytes(50 * 1024 * 1024)} technical upload support for large PDFs`,
-    "Much higher monthly card generation",
-    "Room for thousands of study decks",
-    "RevenueCat-backed Google Play subscriptions",
-  ];
+  const handleRetryPackages = () => {
+    setStatusMessage(null);
+    setErrorMessage(null);
+
+    if (canUsePurchases) {
+      void loadPackages();
+      return;
+    }
+
+    void refreshSubscription();
+  };
 
   return (
     <ScrollView
@@ -202,185 +410,171 @@ export default function UpgradeScreen() {
       contentInsetAdjustmentBehavior="automatic"
       showsVerticalScrollIndicator={false}
     >
-      <View className="gap-4">
-        <View className="flex-row items-center justify-between">
-          <PressableScale
-            className="h-12 w-12 items-center justify-center rounded-full bg-white shadow-card"
-            haptic
-            onPress={() => safeBack("/" as never)}
-          >
-            <Text selectable={false} className="font-poppins-bold text-[26px] leading-[30px] text-ink">
-              {"‹"}
-            </Text>
-          </PressableScale>
-          <Text selectable className="font-poppins-bold text-[20px] leading-[26px] text-ink">
-            Upgrade
-          </Text>
-          <View className="h-12 w-12" />
-        </View>
-
-        <View className="overflow-hidden rounded-[32px] bg-lingua-purple p-6 shadow-card">
-          <View className="self-start rounded-full bg-white/15 px-4 py-2">
-            <Text selectable className="font-poppins-semibold text-[12px] leading-[16px] text-white">
-              Flashly Pro
-            </Text>
-          </View>
-          <Text selectable className="mt-4 font-poppins-bold text-[34px] leading-[40px] text-white">
-            More cards, bigger files, faster studying.
-          </Text>
-          <Text selectable className="mt-3 text-[15px] leading-[23px] text-[#EAE4FF]">
-            {canUsePurchases ? "Choose a plan below to start Pro." : "Payments will be enabled in a production build."}
-          </Text>
-        </View>
-
-        <View className="rounded-[28px] border border-[#ECE6FF] bg-white p-5 shadow-card">
-          <Text selectable className="font-poppins-bold text-[20px] leading-[26px] text-ink">
-            Current plan
-          </Text>
-          {isLoadingSubscription ? (
-            <View className="mt-4 flex-row items-center">
-              <ActivityIndicator color={colors.primary.purple} />
-              <Text selectable className="ml-3 text-[14px] leading-[21px] text-muted">
-                Checking plan...
-              </Text>
-            </View>
-          ) : (
-            <>
-              <Text selectable className="mt-3 font-poppins-bold text-[28px] leading-[34px] text-lingua-purple">
-                {subscription.planLabel}
-              </Text>
-              <Text selectable className="mt-1 text-[14px] leading-[21px] text-muted">
-                Source: {subscription.entitlementSource} • Status: {subscription.status}
-              </Text>
-              {subscription.renewalOrExpirationDate ? (
-                <Text selectable className="mt-1 text-[14px] leading-[21px] text-muted">
-                  Renews or expires {new Date(subscription.renewalOrExpirationDate).toLocaleDateString()}
-                </Text>
-              ) : null}
-              <Text selectable className="mt-3 text-[14px] leading-[21px] text-muted">
-                Trial: {subscription.trial.isExpired ? "complete" : `${subscription.trial.remainingActiveUsageDays} active day${subscription.trial.remainingActiveUsageDays === 1 ? "" : "s"} remaining`}
-              </Text>
-            </>
-          )}
-        </View>
-
-        <View className="rounded-[28px] border border-[#ECE6FF] bg-white p-5 shadow-card">
-          <Text selectable className="font-poppins-bold text-[20px] leading-[26px] text-ink">
-            Choose Pro
-          </Text>
-          {!canUsePurchases ? (
-            <View className="mt-4 rounded-[22px] bg-[#FFF7E8] p-4">
-              <Text selectable className="font-poppins-semibold text-[15px] leading-[22px] text-[#A56300]">
-                Payments unavailable
-              </Text>
-              <Text selectable className="mt-1 text-[14px] leading-[21px] text-[#8A6B36]">
-                {availability.reason} Payments will be enabled in a production build.
-              </Text>
-            </View>
-          ) : isLoadingPackages ? (
-            <View className="mt-4 flex-row items-center">
-              <ActivityIndicator color={colors.primary.purple} />
-              <Text selectable className="ml-3 text-[14px] leading-[21px] text-muted">
-                Loading RevenueCat packages...
-              </Text>
-            </View>
-          ) : displayedPackages.length > 0 ? (
-            <View className="mt-4 gap-3">
-              {displayedPackages.map((item) => (
-                <PressableScale
-                  key={item.identifier}
-                  className="rounded-[24px] border border-[#ECE6FF] bg-[#F7F4FF] p-4"
-                  disabled={activePackageId !== null || isRestoring}
-                  haptic
-                  onPress={() => handlePurchase(item)}
-                >
-                  <View className="flex-row items-center justify-between">
-                    <View className="flex-1 pr-3">
-                      <Text selectable className="font-poppins-bold text-[17px] leading-[23px] text-ink">
-                        {getPackageLabel(item)}
-                      </Text>
-                      <Text selectable className="mt-1 text-[13px] leading-[19px] text-muted">
-                        {item.productIdentifier}
-                      </Text>
-                    </View>
-                    <Text selectable className="font-poppins-bold text-[17px] leading-[23px] text-lingua-purple">
-                      {activePackageId === item.identifier ? "..." : item.priceString}
-                    </Text>
-                  </View>
-                </PressableScale>
-              ))}
-            </View>
-          ) : (
-            <Text selectable className="mt-4 text-[14px] leading-[21px] text-muted">
-              No monthly or yearly Pro packages are available yet.
-            </Text>
-          )}
-
-          <PressableScale
-            className={`mt-4 items-center justify-center rounded-[22px] px-5 py-3 ${
-              canUsePurchases ? "bg-white" : "bg-[#F2EFFB]"
-            }`}
-            disabled={!canUsePurchases || isRestoring || activePackageId !== null}
-            haptic
-            onPress={handleRestore}
-          >
-            <Text selectable={false} className="font-poppins-semibold text-[14px] leading-[20px] text-lingua-purple">
-              {isRestoring ? "Restoring..." : "Restore purchases"}
-            </Text>
-          </PressableScale>
-        </View>
-
-        <View className="rounded-[28px] border border-[#ECE6FF] bg-white p-5 shadow-card">
-          <Text selectable className="font-poppins-bold text-[20px] leading-[26px] text-ink">
-            Pro benefits
-          </Text>
-          <View className="mt-4 gap-3">
-            {benefits.map((benefit) => (
-              <View key={benefit} className="flex-row items-center rounded-[20px] bg-[#F7F4FF] px-4 py-3">
-                <View className="h-8 w-8 items-center justify-center rounded-full bg-lingua-purple">
-                  <Text selectable={false} className="font-poppins-bold text-[14px] leading-[18px] text-white">
-                    {"✓"}
-                  </Text>
-                </View>
-                <Text selectable className="ml-3 flex-1 text-[14px] leading-[21px] text-ink">
-                  {benefit}
-                </Text>
-              </View>
-            ))}
-          </View>
-        </View>
-
-        <View className="rounded-[28px] border border-[#ECE6FF] bg-white p-5 shadow-card">
-          <Text selectable className="font-poppins-bold text-[20px] leading-[26px] text-ink">
-            Your current limits
-          </Text>
-          <Text selectable className="mt-3 text-[14px] leading-[22px] text-muted">
-            {subscription.planId === "free" && !subscription.trial.isExpired
-              ? "Free trial active: upload and generate during your first 3 active days. Backend safety limits still apply."
-              : `${formatMegabytes(subscription.limits.maxFileSizeBytes)} files • ${formatLimit(subscription.limits.maxUploadsPerMonth)} uploads/month • ${formatLimit(subscription.limits.maxGeneratedCardsPerMonth)} cards/month • ${formatLimit(subscription.limits.maxDecks)} decks`}
-          </Text>
-        </View>
-
-        {statusMessage ? (
-          <Text selectable className="text-center text-[14px] leading-[21px] text-[#1F8F5F]">
-            {statusMessage}
-          </Text>
-        ) : null}
-        {errorMessage ? (
-          <Text selectable className="text-center text-[14px] leading-[21px] text-[#C43D32]">
-            {errorMessage}
-          </Text>
-        ) : null}
-
+      <View className="flex-row items-center justify-between">
         <PressableScale
-          className="items-center justify-center rounded-[26px] bg-lingua-purple px-6 py-4 shadow-card"
+          className="h-12 w-12 items-center justify-center rounded-full bg-white shadow-card"
           haptic
-          onPress={() => router.push("/(tabs)/profile" as never)}
+          onPress={() => safeBack(ROUTES.profile as never)}
         >
-          <Text selectable={false} className="font-poppins-semibold text-[17px] leading-[23px] text-white">
-            Back to Profile
+          <Text selectable={false} className="font-poppins-bold text-[26px] leading-[30px] text-ink">
+            {"<"}
           </Text>
         </PressableScale>
+        <Text selectable className="font-poppins-bold text-[20px] leading-[26px] text-ink">
+          Upgrade
+        </Text>
+        <View className="h-12 w-12" />
+      </View>
+
+      <View className="rounded-[28px] bg-lingua-purple p-5 shadow-card">
+        <View className="self-start rounded-full bg-white/15 px-3 py-1.5">
+          <Text selectable className="font-poppins-semibold text-[12px] leading-[16px] text-white">
+            {UPGRADE_COPY.heroEyebrow}
+          </Text>
+        </View>
+        <Text selectable className="mt-3 font-poppins-bold text-[28px] leading-[34px] text-white">
+          {UPGRADE_COPY.heroTitle}
+        </Text>
+        <Text selectable className="mt-2 text-[14px] leading-[21px] text-[#EAE4FF]">
+          {UPGRADE_COPY.heroBody}
+        </Text>
+      </View>
+
+      <View className="gap-3 px-1">
+        <Text selectable className="font-poppins-bold text-[19px] leading-[25px] text-ink">
+          What Pro unlocks
+        </Text>
+        {UPGRADE_COPY.benefits.map((benefit) => (
+          <CheckRow key={benefit} label={benefit} />
+        ))}
+      </View>
+
+      {billingState === "loading" ? (
+        <View className="flex-row items-center rounded-[22px] bg-white px-4 py-4 shadow-card">
+          <ActivityIndicator color={colors.primary.purple} />
+          <Text selectable className="ml-3 text-[14px] leading-[21px] text-muted">
+            Loading subscription options...
+          </Text>
+        </View>
+      ) : null}
+
+      {billingState === "pro-active" ? (
+        <View className="rounded-[24px] bg-white p-4 shadow-card">
+          <Text selectable className="font-poppins-bold text-[20px] leading-[26px] text-ink">
+            Flashly Pro is active
+          </Text>
+          <Text selectable className="mt-2 text-[14px] leading-[21px] text-muted">
+            You already have Pro access on this account.
+          </Text>
+          <PressableScale className="mt-4 items-center justify-center rounded-[22px] bg-lingua-purple px-5 py-3" haptic onPress={() => safeBack(ROUTES.profile as never)}>
+            <Text selectable={false} className="font-poppins-semibold text-[15px] leading-[21px] text-white">
+              Back to Profile
+            </Text>
+          </PressableScale>
+        </View>
+      ) : null}
+
+      {billingState === "available" || billingState === "purchasing" || billingState === "restoring" ? (
+        <View className="gap-3">
+          <Text selectable className="px-1 font-poppins-bold text-[19px] leading-[25px] text-ink">
+            Choose a plan
+          </Text>
+          {displayedPackages.map((item) => (
+            <PackageOption
+              key={item.identifier}
+              disabled={isBusy}
+              isSelected={selectedPackageId === item.identifier}
+              item={item}
+              onPress={() => setSelectedPackageId(item.identifier)}
+            />
+          ))}
+        </View>
+      ) : null}
+
+      {billingState === "unavailable" || billingState === "error" ? (
+        <View className="rounded-[22px] bg-white px-4 py-4 shadow-card">
+          <Text selectable className="font-poppins-bold text-[17px] leading-[23px] text-ink">
+            {UPGRADE_COPY.noPackagesTitle}
+          </Text>
+          <Text selectable className="mt-2 text-[14px] leading-[21px] text-muted">
+            {UPGRADE_COPY.noPackagesMessage}
+          </Text>
+          <PressableScale
+            className="mt-3 self-start rounded-full bg-[#F7F4FF] px-4 py-2"
+            haptic
+            onPress={handleRetryPackages}
+          >
+            <Text selectable={false} className="font-poppins-semibold text-[13px] leading-[18px] text-lingua-purple">
+              Try again
+            </Text>
+          </PressableScale>
+        </View>
+      ) : null}
+
+      {trialSummary ? (
+        <Text selectable className="px-1 text-center text-[13px] leading-[19px] text-muted">
+          {trialSummary}
+        </Text>
+      ) : null}
+
+      {billingState === "available" || billingState === "purchasing" || billingState === "restoring" ? (
+        <PressableScale
+          className={`items-center justify-center rounded-[24px] px-6 py-4 shadow-card ${
+            canPurchase ? "bg-lingua-purple" : "bg-[#D8DCEB]"
+          }`}
+          disabled={!canPurchase}
+          haptic={canPurchase}
+          onPress={handlePurchase}
+        >
+          {billingState === "purchasing" ? (
+            <ActivityIndicator color="#FFFFFF" />
+          ) : (
+            <Text selectable={false} className="font-poppins-semibold text-[18px] leading-[24px] text-white">
+              {getPurchaseButtonLabel(selectedPackage)}
+            </Text>
+          )}
+        </PressableScale>
+      ) : null}
+
+      {canUsePurchases && billingState !== "loading" && billingState !== "pro-active" ? (
+        <PressableScale
+          className="items-center justify-center rounded-[20px] border border-[#E6E0FA] bg-white px-5 py-3"
+          disabled={!canRestore}
+          haptic={canRestore}
+          onPress={handleRestore}
+        >
+          {isRestoring ? (
+            <ActivityIndicator color={colors.primary.purple} />
+          ) : (
+            <Text selectable={false} className="font-poppins-semibold text-[14px] leading-[20px] text-lingua-purple">
+              Restore purchases
+            </Text>
+          )}
+        </PressableScale>
+      ) : null}
+
+      {statusMessage ? (
+        <Text selectable className="text-center text-[14px] leading-[21px] text-[#1F8F5F]">
+          {statusMessage}
+        </Text>
+      ) : null}
+      {errorMessage ? (
+        <Text selectable className="text-center text-[14px] leading-[21px] text-[#C43D32]">
+          {errorMessage}
+        </Text>
+      ) : null}
+
+      <View className="items-center gap-2 px-3 pb-1">
+        <Text selectable className="text-center text-[12px] leading-[18px] text-muted">
+          {renewalDisclaimer}
+        </Text>
+        <View className="flex-row items-center justify-center gap-2">
+          <LegalTextLink label={UPGRADE_COPY.termsLabel} url={termsUrl} />
+          <Text selectable={false} className="text-[12px] leading-[18px] text-muted">
+            {"\u2022"}
+          </Text>
+          <LegalTextLink label={UPGRADE_COPY.privacyLabel} url={privacyUrl} />
+        </View>
       </View>
     </ScrollView>
   );

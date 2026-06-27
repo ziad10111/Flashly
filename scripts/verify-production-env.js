@@ -41,6 +41,8 @@ const loadDotEnv = () => {
 
 const envValue = (key) => process.env[key]?.trim();
 
+const isRevenueCatTestPublicKey = (value) => value?.trim().toLowerCase().startsWith("test_") ?? false;
+
 const getForcePathStyle = () =>
   envValue("FLASHLY_S3_FORCE_PATH_STYLE")?.toLowerCase() === "false" ? false : true;
 
@@ -87,9 +89,16 @@ const validateEnvironment = () => {
   if (!envValue("DATABASE_CA_CERT") && !envValue("DATABASE_CA_CERT_BASE64")) {
     missing.push("DATABASE_CA_CERT or DATABASE_CA_CERT_BASE64");
   }
+  const unsafeRevenueCatKeys = [
+    "EXPO_PUBLIC_REVENUECAT_ANDROID_API_KEY",
+    "EXPO_PUBLIC_REVENUECAT_IOS_API_KEY",
+  ].filter((key) => isRevenueCatTestPublicKey(envValue(key)));
   const misconfigured = Object.entries(requiredValues)
     .filter(([key, expected]) => envValue(key) !== expected)
     .map(([key, expected]) => `${key} must be ${expected}`);
+  misconfigured.push(
+    ...unsafeRevenueCatKeys.map((key) => `${key} must be the public platform SDK key, not a RevenueCat test_ key`),
+  );
 
   return {
     missing,

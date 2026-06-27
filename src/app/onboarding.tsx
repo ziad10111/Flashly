@@ -4,6 +4,7 @@ import { Link, Redirect } from "expo-router";
 import { Pressable, ScrollView, Text, View, useWindowDimensions } from "react-native";
 
 import { FLASHLY_AUTH_MODE } from "@/api/config";
+import { ROUTES } from "@/lib/navigation/routes";
 
 type OverlayCardProps = {
   title: string;
@@ -82,7 +83,7 @@ export default function OnboardingScreen() {
   const illustrationSize = Math.min(width * 0.82, 380);
 
   if (FLASHLY_AUTH_MODE === "mock") {
-    return <Redirect href={"/(tabs)" as never} />;
+    return <Redirect href={ROUTES.home as never} />;
   }
 
   if (!isLoaded) {
@@ -90,7 +91,7 @@ export default function OnboardingScreen() {
   }
 
   if (isSignedIn) {
-    return <Redirect href={"/(tabs)" as never} />;
+    return <Redirect href={ROUTES.home as never} />;
   }
 
   return (
@@ -202,7 +203,7 @@ export default function OnboardingScreen() {
           />
         </View>
 
-        <Link href="/sign-up" asChild>
+        <Link href={ROUTES.signUp} asChild>
           <Pressable className="mt-2 flex-row items-center justify-center rounded-[32px] bg-lingua-purple px-8 py-7 shadow-card">
             <Text
               selectable

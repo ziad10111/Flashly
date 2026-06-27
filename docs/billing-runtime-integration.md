@@ -41,10 +41,11 @@ Client-side native purchase configuration:
 
 ```bash
 EXPO_PUBLIC_REVENUECAT_ANDROID_API_KEY=public_android_sdk_key
+EXPO_PUBLIC_REVENUECAT_IOS_API_KEY=public_ios_sdk_key
 EXPO_PUBLIC_REVENUECAT_ENTITLEMENT_ID=pro
 ```
 
-The Android SDK key is safe to expose to the native client. RevenueCat webhook secrets and REST API keys are server-only and must never use `EXPO_PUBLIC_`.
+The platform SDK keys are safe to expose to the native client. For Android, use the public SDK key for the RevenueCat app whose package is `com.flashly.app`. RevenueCat keys beginning with `test_` are rejected in release builds. RevenueCat webhook secrets and REST API keys are server-only and must never use `EXPO_PUBLIC_`.
 
 ## Endpoints
 
@@ -134,8 +135,8 @@ It shows:
 
 Native purchase setup uses `react-native-purchases`. The SDK is configured only when all of these are true:
 
-- the app is running in a native Android production build
-- `EXPO_PUBLIC_REVENUECAT_ANDROID_API_KEY` is present
+- the app is running in a native Android or iOS release build
+- the matching platform `EXPO_PUBLIC_REVENUECAT_*_API_KEY` is present and does not start with `test_`
 - a Clerk user is signed in
 
 Expo Go and development builds without RevenueCat configuration keep the placeholder messaging and do not crash if the native module is unavailable. The Clerk user id is used as the RevenueCat app user id so webhook `app_user_id` maps back to Flashly users.
@@ -151,7 +152,7 @@ Server-side entitlement checks remain authoritative. The client purchase state n
 ## RevenueCat Dashboard Setup
 
 1. Create a RevenueCat project for Flashly.
-2. Add the Android app and copy the public Android SDK key into `EXPO_PUBLIC_REVENUECAT_ANDROID_API_KEY`.
+2. Add the Android app with package `com.flashly.app` and copy the public Android SDK key into `EXPO_PUBLIC_REVENUECAT_ANDROID_API_KEY`.
 3. Create a `pro` entitlement, or set `EXPO_PUBLIC_REVENUECAT_ENTITLEMENT_ID` to the entitlement id you choose.
 4. Connect Google Play Billing in RevenueCat.
 5. Add monthly and yearly subscription products from Google Play.

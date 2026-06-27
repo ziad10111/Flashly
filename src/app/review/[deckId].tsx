@@ -1,6 +1,6 @@
 import { SymbolView, type AndroidSymbol, type SFSymbol } from "expo-symbols";
 import semiBold from "expo-symbols/androidWeights/semiBold";
-import { router, useLocalSearchParams } from "expo-router";
+import { Redirect, router, useLocalSearchParams } from "expo-router";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import Animated, { FadeIn, FadeInDown, FadeOut, SlideInRight } from "react-native-reanimated";
@@ -14,6 +14,7 @@ import { celebrateXp } from "@/lib/feedback/xpCelebration";
 import { playAnswerSound } from "@/lib/feedback/sounds";
 import { formatPercent } from "@/lib/deck-utils";
 import { safeBack } from "@/lib/navigation/safeBack";
+import { ROUTES, createDeckRoute, getReviewUnavailableFallbackRoute, logNavigation } from "@/lib/navigation/routes";
 import { useFlashlyProgressStore } from "@/store/useFlashlyProgressStore";
 import { useFlashlyUploadStore } from "@/store/useFlashlyUploadStore";
 import type { DeckDTO, FlashcardDTO, GetDeckResponse } from "@/api/contracts";
@@ -96,7 +97,7 @@ const getSummaryStats = (deck: DeckDTO, cards: FlashcardDTO[]) => {
   };
 };
 
-function EmptyState({ body, fallback = "/decks", title }: { title: string; body: string; fallback?: "/decks" }) {
+function EmptyState({ body, fallback = ROUTES.decks, title }: { title: string; body: string; fallback?: string }) {
   const insets = useSafeAreaInsets();
   const contentStyle = useMemo(
     () => ({
@@ -110,7 +111,7 @@ function EmptyState({ body, fallback = "/decks", title }: { title: string; body:
 
   return (
     <ScrollView className="bg-lingua-background" contentInsetAdjustmentBehavior="automatic" contentContainerStyle={contentStyle}>
-      <PressableScale className="h-12 w-12 items-center justify-center rounded-full bg-white" haptic style={styles.cardShadow} onPress={() => safeBack(fallback)}>
+      <PressableScale className="h-12 w-12 items-center justify-center rounded-full bg-white" haptic style={styles.cardShadow} onPress={() => safeBack(fallback as never)}>
         <Text selectable={false} className="font-poppins-semibold text-[30px] leading-[32px] text-ink">
           {"<"}
         </Text>
@@ -132,6 +133,7 @@ export default function ReviewSessionScreen() {
   const { deckId, mode } = useLocalSearchParams<{ deckId: string; mode?: ReviewMode }>();
   const insets = useSafeAreaInsets();
   useFlashlyProgressStore((state) => (deckId ? state.deckProgressById[deckId] : undefined));
+  const isDeletedDeck = useFlashlyProgressStore((state) => (deckId ? state.deletedDeckIds.includes(deckId) : false));
   const recordCardReview = useFlashlyProgressStore((state) => state.recordCardReview);
   const recordSessionFinished = useFlashlyProgressStore((state) => state.recordSessionFinished);
   const generatedDecks = useFlashlyUploadStore((state) => state.generatedDecks);
@@ -171,7 +173,7 @@ export default function ReviewSessionScreen() {
     let isMounted = true;
 
     const loadReview = async () => {
-      if (!deckId) {
+      if (!deckId || isDeletedDeck) {
         setLoadState("not-found");
         return;
       }
@@ -224,7 +226,20 @@ export default function ReviewSessionScreen() {
     return () => {
       isMounted = false;
     };
-  }, [deckId, generatedCardsByDeckId, generatedDecks, mode]);
+  }, [deckId, generatedCardsByDeckId, generatedDecks, isDeletedDeck, mode]);
+
+  useEffect(() => {
+    if (loadState !== "not-found") {
+      return;
+    }
+
+    logNavigation({
+      action: "review-unavailable-redirect",
+      deckId,
+      reason: isDeletedDeck ? "deck tombstone present" : "deck missing",
+      to: getReviewUnavailableFallbackRoute(),
+    });
+  }, [deckId, isDeletedDeck, loadState]);
 
   const deck = deckResponse?.deck ?? null;
   const currentCard = cards[currentIndex];
@@ -343,7 +358,7 @@ export default function ReviewSessionScreen() {
   }
 
   if (loadState === "not-found" || !deck) {
-    return <EmptyState title="Deck not found" body="Choose a deck from the Decks tab to start a review." />;
+    return <Redirect href={getReviewUnavailableFallbackRoute() as never} />;
   }
 
   if (loadState === "empty") {
@@ -391,7 +406,7 @@ export default function ReviewSessionScreen() {
           </Text>
         </PressableScale>
 
-        <PressableScale className="items-center justify-center rounded-[26px] bg-[#F7F4FF] px-6 py-4" haptic onPress={() => router.replace(`/deck/${deck.id}` as never)}>
+        <PressableScale className="items-center justify-center rounded-[26px] bg-[#F7F4FF] px-6 py-4" haptic onPress={() => router.replace(createDeckRoute(deck.id) as never)}>
           <Text selectable={false} className="font-poppins-semibold text-[18px] leading-[24px] text-lingua-purple">
             Back to Deck
           </Text>
@@ -462,7 +477,7 @@ export default function ReviewSessionScreen() {
           </Text>
         </View>
 
-        <PressableScale className="items-center justify-center rounded-[26px] bg-lingua-purple px-6 py-4" haptic style={styles.cardShadow} onPress={() => router.replace(`/deck/${deck.id}` as never)}>
+        <PressableScale className="items-center justify-center rounded-[26px] bg-lingua-purple px-6 py-4" haptic style={styles.cardShadow} onPress={() => router.replace(createDeckRoute(deck.id) as never)}>
           <Text selectable={false} className="font-poppins-semibold text-[20px] leading-[26px] text-white">
             Back to Deck
           </Text>
@@ -485,7 +500,7 @@ export default function ReviewSessionScreen() {
           className="h-12 w-12 items-center justify-center rounded-full bg-white"
           haptic
           style={styles.cardShadow}
-          onPress={() => safeBack(`/deck/${deck.id}` as never)}
+          onPress={() => safeBack(createDeckRoute(deck.id) as never)}
         >
           <Text selectable={false} className="font-poppins-semibold text-[30px] leading-[32px] text-ink">
             {"<"}

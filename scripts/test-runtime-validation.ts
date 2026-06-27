@@ -87,6 +87,12 @@ const main = async () => {
   const result = validateRuntimeEnvironment();
   assert(result.ok, `Expected realistic staging values to pass runtime validation: ${JSON.stringify(result.sections)}`);
 
+  process.env.EXPO_PUBLIC_REVENUECAT_ANDROID_API_KEY = "test_bad_release_key";
+  const revenueCatTestKeyResult = validateRuntimeEnvironment();
+  assert(!revenueCatTestKeyResult.ok, "Expected RevenueCat test_ public SDK key to fail strict runtime validation.");
+
+  process.env.EXPO_PUBLIC_REVENUECAT_ANDROID_API_KEY = "goog_test_store_sdk_key";
+
   process.env.FLASHLY_AI_REQUEST_TIMEOUT_MS = "4999";
   const lowTimeoutResult = validateRuntimeEnvironment();
   assert(!lowTimeoutResult.ok, "Expected too-low FLASHLY_AI_REQUEST_TIMEOUT_MS to fail runtime validation.");

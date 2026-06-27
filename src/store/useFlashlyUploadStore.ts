@@ -4,7 +4,9 @@ import { createJSONStorage, persist } from "zustand/middleware";
 
 import { images } from "@/constants/images";
 import type { GenerateFlashcardsResponse, DeckDTO, FlashcardDTO } from "@/api/contracts";
+import { shouldApplyGeneratedDeckMutation } from "@/api/repositories/deckDeletion";
 import { isTemplateGeneratedCard } from "@/lib/generated-card-guards";
+import { useFlashlyProgressStore } from "@/store/useFlashlyProgressStore";
 import type { DeckMaterial, DeckMaterialSourceType, DeckMaterialStatus } from "@/types/deck-material";
 import type { Flashcard } from "@/types/learning";
 import type { SelectedUploadFile } from "@/types/study";
@@ -294,6 +296,12 @@ const hasValidChoices = (card: Flashcard) => {
 const isUsableGeneratedCard = (card: Flashcard) =>
   Boolean(card.id && card.deckId && card.question.trim() && card.answer.trim() && hasValidChoices(card));
 
+const isDeletedGeneratedDeck = (deckId: string) =>
+  !shouldApplyGeneratedDeckMutation({
+    deckId,
+    deletedDeckIds: useFlashlyProgressStore.getState().deletedDeckIds,
+  });
+
 const getCardSetTitles = (cards: Flashcard[]) => {
   const titles = Array.from(new Set(cards.map((card) => card.sourceSection ?? card.topic).filter(Boolean)));
   return titles.length > 0 ? titles.slice(0, 6) : ["Generated flashcards"];
@@ -444,6 +452,10 @@ export const useFlashlyUploadStore = create<FlashlyUploadState>()(
           throw new GeneratedDeckPersistenceError("Flashly could not save this generated deck because its deck id was invalid.");
         }
 
+        if (isDeletedGeneratedDeck(deckId)) {
+          throw new GeneratedDeckPersistenceError("Flashly ignored a generated deck because it was already deleted.");
+        }
+
         const cards = getValidCardsFromResponse(response);
 
         if (cards.length === 0) {
@@ -480,6 +492,10 @@ export const useFlashlyUploadStore = create<FlashlyUploadState>()(
           throw new GeneratedDeckPersistenceError("Flashly could not append generated cards because the deck id was missing.");
         }
 
+        if (isDeletedGeneratedDeck(deckId)) {
+          return { appendedCount: 0, deckId };
+        }
+
         const incomingCards = getValidCardsFromResponse(response);
         let appendedCount = 0;
 
@@ -487,6 +503,10 @@ export const useFlashlyUploadStore = create<FlashlyUploadState>()(
           const existingDeck = current.generatedDecks.find((deck) => deck.id === deckId);
 
           if (!existingDeck) {
+            if (isDeletedGeneratedDeck(deckId)) {
+              return current;
+            }
+
             throw new GeneratedDeckPersistenceError("Flashly could not append generated cards because the partial deck was not found.");
           }
 
@@ -519,7 +539,11 @@ export const useFlashlyUploadStore = create<FlashlyUploadState>()(
 
         return { appendedCount, deckId };
       },
-      markGeneratedDeckComplete: (deckId) =>
+      markGeneratedDeckComplete: (deckId) => {
+        if (isDeletedGeneratedDeck(deckId)) {
+          return;
+        }
+
         set((current) => ({
           generatedDecks: current.generatedDecks.map((deck) =>
             deck.id === deckId
@@ -532,8 +556,13 @@ export const useFlashlyUploadStore = create<FlashlyUploadState>()(
                 }
               : deck,
           ),
-        })),
-      markGeneratedDeckPartialError: (deckId, message) =>
+        }));
+      },
+      markGeneratedDeckPartialError: (deckId, message) => {
+        if (isDeletedGeneratedDeck(deckId)) {
+          return;
+        }
+
         set((current) => ({
           generatedDecks: current.generatedDecks.map((deck) =>
             deck.id === deckId
@@ -547,8 +576,13 @@ export const useFlashlyUploadStore = create<FlashlyUploadState>()(
                 }
               : deck,
           ),
-        })),
-      markGeneratedDeckGenerating: (deckId) =>
+        }));
+      },
+      markGeneratedDeckGenerating: (deckId) => {
+        if (isDeletedGeneratedDeck(deckId)) {
+          return;
+        }
+
         set((current) => ({
           generatedDecks: current.generatedDecks.map((deck) =>
             deck.id === deckId
@@ -560,13 +594,18 @@ export const useFlashlyUploadStore = create<FlashlyUploadState>()(
                 }
               : deck,
           ),
-        })),
+        }));
+      },
       persistGeneratedDeckResponse: (response) => {
         const deckDto = response.deck;
         const deckId = response.deckId || deckDto.id;
 
         if (!deckId || deckDto.id !== deckId) {
           throw new GeneratedDeckPersistenceError("Flashly could not save this generated deck because its deck id was invalid.");
+        }
+
+        if (isDeletedGeneratedDeck(deckId)) {
+          throw new GeneratedDeckPersistenceError("Flashly ignored a generated deck because it was already deleted.");
         }
 
         const cards = getValidCardsFromResponse(response);
@@ -596,13 +635,26 @@ export const useFlashlyUploadStore = create<FlashlyUploadState>()(
       },
       removeGeneratedDeck: (deckId) =>
         set((current) => {
+          const removedDeck = current.generatedDecks.find((deck) => deck.id === deckId);
+          const clearsCurrentGeneration =
+            current.generatedDeckId === deckId || Boolean(removedDeck?.materialId && current.materialId === removedDeck.materialId);
           const nextGeneratedCardsByDeckId = { ...current.generatedCardsByDeckId };
           delete nextGeneratedCardsByDeckId[deckId];
 
           return {
+            currentStage: clearsCurrentGeneration ? "idle" : current.currentStage,
+            errorMessage: clearsCurrentGeneration ? null : current.errorMessage,
             generatedCardsByDeckId: nextGeneratedCardsByDeckId,
-            generatedDeckId: current.generatedDeckId === deckId ? null : current.generatedDeckId,
+            generatedDeckId: clearsCurrentGeneration ? null : current.generatedDeckId,
             generatedDecks: current.generatedDecks.filter((deck) => deck.id !== deckId),
+            idempotencyKey:
+              clearsCurrentGeneration && current.idempotencyKey === removedDeck?.idempotencyKey
+                ? null
+                : current.idempotencyKey,
+            materialId: clearsCurrentGeneration ? null : current.materialId,
+            progressPercentage: clearsCurrentGeneration ? 0 : current.progressPercentage,
+            status: clearsCurrentGeneration && current.status === "ready" ? "idle" : current.status,
+            uploadJobId: clearsCurrentGeneration ? null : current.uploadJobId,
           };
         }),
       resetAllUploadState: () =>

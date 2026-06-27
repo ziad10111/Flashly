@@ -13,6 +13,7 @@ import { AnimatedOwl } from "@/components/mascot/animated-owl";
 import { DailyGoalRing } from "@/components/progress/DailyGoalRing";
 import { images } from "@/constants/images";
 import { useFlashlyDecks } from "@/hooks/useFlashlyDecks";
+import { ROUTES, createDeckRoute, createReviewRoute } from "@/lib/navigation/routes";
 import { getTodayReviewedCount, useFlashlyProgressStore } from "@/store/useFlashlyProgressStore";
 import { useStudySelectionStore } from "@/store/useStudySelectionStore";
 
@@ -131,21 +132,21 @@ export default function HomeTabScreen() {
       color: "#6C4EF5",
       detail: "Create cards",
       icon: { android: "upload_file", ios: "square.and.arrow.up.fill" } as HomeSymbol,
-      onPress: () => router.push("/upload" as never),
+      onPress: () => router.push(ROUTES.upload as never),
       title: "Upload",
     },
     {
       color: "#3D8BFF",
       detail: currentDeck ? `${currentDeck.cardCount} cards` : "Pick a deck",
       icon: { android: "style", ios: "rectangle.stack.fill" } as HomeSymbol,
-      onPress: () => (currentDeck ? router.push(`/review/${currentDeck.id}` as never) : router.push("/decks" as never)),
+      onPress: () => (currentDeck ? router.push(createReviewRoute(currentDeck.id) as never) : router.push(ROUTES.decks as never)),
       title: "Review",
     },
     {
       color: "#FF4D4F",
       detail: weakCards > 0 ? `${weakCards} waiting` : "All clear",
       icon: { android: "target", ios: "target" } as HomeSymbol,
-      onPress: () => (currentDeck ? router.push(`/review/${currentDeck.id}?mode=weak` as never) : router.push("/decks" as never)),
+      onPress: () => (currentDeck ? router.push(createReviewRoute(currentDeck.id, "weak") as never) : router.push(ROUTES.decks as never)),
       title: "Weak",
     },
   ];
@@ -161,7 +162,7 @@ export default function HomeTabScreen() {
 
   useEffect(() => {
     if (hasHydrated && !selectedStudyType) {
-      router.replace("/study-type" as never);
+      router.replace(ROUTES.studyType as never);
     }
   }, [hasHydrated, selectedStudyType]);
 
@@ -171,7 +172,7 @@ export default function HomeTabScreen() {
 
   const handleClearStudySelection = () => {
     clearSelectedStudyType();
-    router.replace("/study-type" as never);
+    router.replace(ROUTES.studyType as never);
   };
 
   if (status === "loading") {
@@ -219,7 +220,7 @@ export default function HomeTabScreen() {
           </Text>
         </View>
 
-        <PressableScale className="h-12 w-12 items-center justify-center rounded-full bg-white shadow-card" haptic onPress={() => router.push("/profile" as never)}>
+        <PressableScale className="h-12 w-12 items-center justify-center rounded-full bg-white shadow-card" haptic onPress={() => router.push(ROUTES.profile as never)}>
           <SmallIcon color="#6C4EF5" icon={{ android: "person", ios: "person.fill" }} label="P" tint="#F5F0FF" />
         </PressableScale>
       </Animated.View>
@@ -279,7 +280,7 @@ export default function HomeTabScreen() {
         <PressableScale
           className="rounded-[24px] border border-[#ECEEFA] bg-white p-3 shadow-card"
           haptic
-          onPress={() => router.push("/upload" as never)}
+          onPress={() => router.push(ROUTES.upload as never)}
           pressedScale={0.98}
         >
         <View className="flex-row items-center">
@@ -363,7 +364,7 @@ export default function HomeTabScreen() {
           <PressableScale
             className="mt-4 flex-row items-center justify-center rounded-[22px] bg-[#F2F0FA] px-5 py-3"
             haptic
-            onPress={() => router.push(`/deck/${currentDeck.id}` as never)}
+            onPress={() => router.push(createDeckRoute(currentDeck.id) as never)}
           >
             <Text selectable={false} className="font-poppins-semibold text-[16px] leading-[22px] text-lingua-purple">
               Review deck
@@ -382,7 +383,7 @@ export default function HomeTabScreen() {
           <Text selectable className="mt-2 text-center text-[15px] leading-[23px] text-muted">
             Upload your first study material to generate flashcards.
           </Text>
-          <PressableScale className="mt-5 items-center justify-center rounded-[24px] bg-lingua-purple px-5 py-4" haptic onPress={() => router.push("/upload" as never)}>
+          <PressableScale className="mt-5 items-center justify-center rounded-[24px] bg-lingua-purple px-5 py-4" haptic onPress={() => router.push(ROUTES.upload as never)}>
             <Text selectable={false} className="font-poppins-semibold text-[16px] leading-[22px] text-white">
               Upload study material
             </Text>
@@ -423,7 +424,7 @@ export default function HomeTabScreen() {
           <PressableScale
             className="flex-1 items-center justify-center rounded-[22px] bg-lingua-purple px-4 py-3"
             haptic
-            onPress={() => (currentDeck ? router.push(`/review/${currentDeck.id}` as never) : router.push("/upload" as never))}
+            onPress={() => (currentDeck ? router.push(createReviewRoute(currentDeck.id) as never) : router.push(ROUTES.upload as never))}
           >
             <Text selectable={false} className="font-poppins-semibold text-[15px] leading-[21px] text-white">
               {currentDeck ? "Start review" : "Upload file"}
@@ -433,7 +434,7 @@ export default function HomeTabScreen() {
             className="flex-1 items-center justify-center rounded-[22px] bg-[#F4F6FB] px-4 py-3"
             disabled={!currentDeck || weakCards === 0}
             haptic
-            onPress={() => currentDeck && router.push(`/review/${currentDeck.id}?mode=weak` as never)}
+            onPress={() => currentDeck && router.push(createReviewRoute(currentDeck.id, "weak") as never)}
           >
             <Text selectable={false} className={`font-poppins-semibold text-[15px] leading-[21px] ${currentDeck && weakCards > 0 ? "text-[#FF4D4F]" : "text-muted"}`}>
               {weakCards > 0 ? `${weakCards} weak` : "No weak cards"}

@@ -80,6 +80,8 @@ export const isExplicitPlaceholderValue = (value: string | undefined) => {
   return /^(your-|replace-|insert-|enter-)/i.test(trimmed);
 };
 
+export const isRevenueCatTestPublicSdkKey = (value: string | undefined) => value?.trim().toLowerCase().startsWith("test_") ?? false;
+
 const getRuntimeEnvironment = (): FlashlyRuntimeEnvironment => {
   const raw = process.env.FLASHLY_ENV?.trim().toLowerCase() || process.env.NODE_ENV?.trim().toLowerCase();
 
@@ -357,13 +359,25 @@ export const validateRuntimeEnvironment = (): RuntimeValidationResult => {
   }
 
   if (FLASHLY_BILLING_MODE === "revenuecat") {
+    const revenueCatAndroidApiKey = process.env.EXPO_PUBLIC_REVENUECAT_ANDROID_API_KEY?.trim();
+    const revenueCatIosApiKey = process.env.EXPO_PUBLIC_REVENUECAT_IOS_API_KEY?.trim();
+
     requireValue(sections, "billing", "REVENUECAT_WEBHOOK_SECRET", REVENUECAT_WEBHOOK_SECRET);
-    requireValue(
-      sections,
-      "billing",
-      "EXPO_PUBLIC_REVENUECAT_ANDROID_API_KEY",
-      process.env.EXPO_PUBLIC_REVENUECAT_ANDROID_API_KEY?.trim(),
-    );
+    requireValue(sections, "billing", "EXPO_PUBLIC_REVENUECAT_ANDROID_API_KEY", revenueCatAndroidApiKey);
+    if (isRevenueCatTestPublicSdkKey(revenueCatAndroidApiKey)) {
+      addIssue(sections, "billing", {
+        key: "EXPO_PUBLIC_REVENUECAT_ANDROID_API_KEY",
+        message: "RevenueCat Android public SDK key must not start with test_ in staging or production.",
+        severity: strict ? "error" : "warning",
+      });
+    }
+    if (isRevenueCatTestPublicSdkKey(revenueCatIosApiKey)) {
+      addIssue(sections, "billing", {
+        key: "EXPO_PUBLIC_REVENUECAT_IOS_API_KEY",
+        message: "RevenueCat iOS public SDK key must not start with test_ in staging or production.",
+        severity: strict ? "error" : "warning",
+      });
+    }
     requireValue(
       sections,
       "billing",

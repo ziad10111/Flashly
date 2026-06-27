@@ -1,8 +1,8 @@
 import { Image } from "expo-image";
 import { SymbolView, type AndroidSymbol, type SFSymbol } from "expo-symbols";
 import semiBold from "expo-symbols/androidWeights/semiBold";
-import { router } from "expo-router";
-import { useMemo, useState } from "react";
+import { router, useLocalSearchParams } from "expo-router";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import Animated, { FadeInDown } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -14,6 +14,7 @@ import { AnimatedOwl } from "@/components/mascot/animated-owl";
 import { images } from "@/constants/images";
 import { useFlashlyDecks } from "@/hooks/useFlashlyDecks";
 import { formatPercent } from "@/lib/deck-utils";
+import { ROUTES, createDeckRoute, logNavigation, type NavigationNotice } from "@/lib/navigation/routes";
 import { useActiveDeckStore } from "@/store/useActiveDeckStore";
 
 type MaterialTab = "cards" | "review";
@@ -103,12 +104,14 @@ function formatReviewedDate(value: string | undefined) {
 function DeckRow({
   index,
   isActive,
+  isDeleting,
   deck,
   onDelete,
   onPress,
 }: {
   index: number;
   isActive: boolean;
+  isDeleting: boolean;
   deck: DeckDTO;
   onDelete: () => void;
   onPress: () => void;
@@ -148,7 +151,8 @@ function DeckRow({
             <PressableScale
               accessibilityLabel={`More actions for ${deck.title}`}
               accessibilityRole="button"
-              className="h-8 w-8 items-center justify-center rounded-full bg-[#F4F6FB]"
+              className={`h-8 w-8 items-center justify-center rounded-full ${isDeleting ? "bg-[#F0ECFA]" : "bg-[#F4F6FB]"}`}
+              disabled={isDeleting}
               haptic
               onPress={(event) => {
                 event.stopPropagation();
@@ -156,7 +160,11 @@ function DeckRow({
               }}
               pressedScale={0.92}
             >
-              <DeckIcon color="#8B93AD" fallback="..." name={{ android: "more_horiz", ios: "ellipsis" }} size={18} />
+              {isDeleting ? (
+                <ActivityIndicator color="#6C4EF5" size="small" />
+              ) : (
+                <DeckIcon color="#8B93AD" fallback="..." name={{ android: "more_horiz", ios: "ellipsis" }} size={18} />
+              )}
             </PressableScale>
           </View>
 
@@ -190,9 +198,11 @@ function DeckRow({
 
 export default function DecksTabScreen() {
   const insets = useSafeAreaInsets();
+  const { notice } = useLocalSearchParams<{ notice?: NavigationNotice }>();
   const [activeTab, setActiveTab] = useState<MaterialTab>("cards");
   const [deletingDeckId, setDeletingDeckId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
+  const lastNoticeRef = useRef<string | null>(null);
   const activeDeckId = useActiveDeckStore((state) => state.activeDeckId);
   const setActiveDeckId = useActiveDeckStore((state) => state.setActiveDeckId);
   const { decks, errorMessage, status } = useFlashlyDecks();
@@ -226,9 +236,38 @@ export default function DecksTabScreen() {
     [insets.bottom, insets.top],
   );
 
+  useEffect(() => {
+    if (!notice || lastNoticeRef.current === notice) {
+      return;
+    }
+
+    lastNoticeRef.current = notice;
+
+    if (notice === "deck-not-found") {
+      Alert.alert("Deck unavailable", "That deck is no longer available. Choose another deck from your library.");
+      return;
+    }
+
+    if (notice === "review-unavailable") {
+      Alert.alert("Review unavailable", "That review session is no longer available. Choose a deck to continue studying.");
+      return;
+    }
+
+    if (notice === "deck-deleted") {
+      Alert.alert("Deck deleted", "The deck was removed from your library.");
+    }
+  }, [notice]);
+
   const handleOpenDeck = (deck: DeckDTO) => {
     setActiveDeckId(deck.id);
-    router.push(`/deck/${deck.id}` as never);
+    const to = createDeckRoute(deck.id);
+    logNavigation({
+      action: "open-deck",
+      deckId: deck.id,
+      from: ROUTES.decks,
+      to,
+    });
+    router.push(to as never);
   };
 
   const handleDeleteDeck = (deck: DeckDTO) => {
@@ -255,9 +294,22 @@ export default function DecksTabScreen() {
                 setActiveDeckId(nextDeck?.id ?? "");
               }
 
-              router.replace("/decks" as never);
+              logNavigation({
+                action: "deck-delete-success",
+                deckId: deck.id,
+                from: ROUTES.decks,
+                reason: "deck list action",
+                to: ROUTES.decks,
+              });
+              router.replace(ROUTES.decks as never);
             } catch (error) {
               console.warn("Delete deck failed", error);
+              logNavigation({
+                action: "deck-delete-failed",
+                deckId: deck.id,
+                from: ROUTES.decks,
+                reason: "delete repository rejected",
+              });
               Alert.alert("Could not delete deck", "The deck was not deleted. Please try again.");
             } finally {
               setDeletingDeckId(null);
@@ -269,6 +321,10 @@ export default function DecksTabScreen() {
   };
 
   const handleDeckActions = (deck: DeckDTO) => {
+    if (deletingDeckId) {
+      return;
+    }
+
     Alert.alert("Deck actions", deck.title, [
       { style: "cancel", text: "Cancel" },
       {
@@ -293,7 +349,7 @@ export default function DecksTabScreen() {
   return (
     <ScrollView className="bg-lingua-background" contentContainerStyle={contentStyle} contentInsetAdjustmentBehavior="automatic" showsVerticalScrollIndicator={false}>
       <Animated.View entering={FadeInDown.duration(220)} className="flex-row items-center">
-        <PressableScale accessibilityRole="button" className="h-12 w-12 items-center justify-center rounded-full bg-white" haptic onPress={() => router.push("/" as never)} style={styles.card}>
+        <PressableScale accessibilityRole="button" className="h-12 w-12 items-center justify-center rounded-full bg-white" haptic onPress={() => router.push(ROUTES.home as never)} style={styles.card}>
           <Text selectable={false} className="font-poppins-semibold text-[34px] leading-[36px] text-ink">
             {"<"}
           </Text>
@@ -315,7 +371,7 @@ export default function DecksTabScreen() {
           accessibilityRole="button"
           className="h-[58px] w-[58px] items-center justify-center rounded-[18px] bg-white"
           haptic
-          onPress={() => router.push("/upload" as never)}
+          onPress={() => router.push(ROUTES.upload as never)}
           style={styles.card}
         >
           <DeckIcon color="#6C4EF5" fallback="UP" name={{ android: "upload_file", ios: "square.and.arrow.up.fill" }} size={25} />
@@ -377,6 +433,7 @@ export default function DecksTabScreen() {
               <DeckRow
                 index={index}
                 isActive={deck.id === activeDeckId}
+                isDeleting={deletingDeckId === deck.id}
                 deck={deck}
                 onDelete={() => handleDeckActions(deck)}
                 onPress={() => handleOpenDeck(deck)}
@@ -394,7 +451,7 @@ export default function DecksTabScreen() {
             {searchQuery ? "Try a different title, file name, or material type." : "Upload your first study material and Flashly will create cards for you."}
           </Text>
           {searchQuery ? null : (
-            <PressableScale className="mt-5 items-center justify-center rounded-[24px] bg-lingua-purple px-5 py-4" haptic onPress={() => router.push("/upload" as never)}>
+            <PressableScale className="mt-5 items-center justify-center rounded-[24px] bg-lingua-purple px-5 py-4" haptic onPress={() => router.push(ROUTES.upload as never)}>
               <Text selectable={false} className="font-poppins-semibold text-[16px] leading-[22px] text-white">
                 Upload material
               </Text>

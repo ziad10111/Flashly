@@ -5,7 +5,7 @@ import { Stack, useRouter, useSegments } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import { StatusBar } from "expo-status-bar";
 import * as SystemUI from "expo-system-ui";
-import { useEffect } from "react";
+import { type ReactNode, useEffect, useRef } from "react";
 import { View } from "react-native";
 import { PostHogProvider } from "posthog-react-native";
 
@@ -17,6 +17,7 @@ import type { SubscriptionStatusResponse } from "@/api/contracts";
 import { setApiAuthTokenProvider } from "@/api/authToken";
 import { useStudySelectionStore } from "@/store/useStudySelectionStore";
 import { initializeClientSentry, withSentryRoot } from "@/lib/monitoring/sentryClient";
+import { ROUTES, isProtectedRootSegment, logNavigation } from "@/lib/navigation/routes";
 import { colors, useAppFonts } from "@/theme";
 
 initializeClientSentry();
@@ -47,31 +48,43 @@ function ApiAuthTokenBridge() {
   return null;
 }
 
-function AuthRouteGuard() {
+function AuthRouteGate({ children }: { children: ReactNode }) {
   const { isLoaded, isSignedIn } = useAuth();
   const router = useRouter();
   const segments = useSegments();
+  const redirectedPathRef = useRef<string | null>(null);
+  const rootSegment = segments[0];
+  const isProtectedRoute = isProtectedRootSegment(rootSegment);
+  const shouldRedirectToSignIn = FLASHLY_AUTH_MODE === "clerk" && isLoaded && !isSignedIn && isProtectedRoute;
 
   useEffect(() => {
-    if (FLASHLY_AUTH_MODE !== "clerk" || !isLoaded) {
+    if (!shouldRedirectToSignIn) {
+      redirectedPathRef.current = null;
       return;
     }
 
-    const rootSegment = segments[0];
-    const isProtectedRoute =
-      rootSegment === "(tabs)" ||
-      rootSegment === "deck" ||
-      rootSegment === "review" ||
-      rootSegment === "study-type" ||
-      rootSegment === "upgrade";
+    const sourcePath = segments.join("/") || "/";
 
-    if (!isSignedIn && isProtectedRoute) {
-      router.dismissAll();
-      router.replace("/sign-in" as never);
+    if (redirectedPathRef.current === sourcePath) {
+      return;
     }
-  }, [isLoaded, isSignedIn, router, segments]);
 
-  return null;
+    redirectedPathRef.current = sourcePath;
+    logNavigation({
+      action: "auth-guard-redirect",
+      from: sourcePath,
+      reason: "signed-out protected route",
+      to: ROUTES.signIn,
+    });
+    router.dismissAll();
+    router.replace(ROUTES.signIn as never);
+  }, [router, segments, shouldRedirectToSignIn]);
+
+  if (FLASHLY_AUTH_MODE === "clerk" && isProtectedRoute && (!isLoaded || !isSignedIn)) {
+    return <View style={{ flex: 1, backgroundColor: colors.neutral.background }} />;
+  }
+
+  return children;
 }
 
 function RootLayout() {
@@ -117,15 +130,16 @@ function RootLayout() {
     >
       <ClerkProvider publishableKey={publishableKey} tokenCache={tokenCache}>
         <ApiAuthTokenBridge />
-        <AuthRouteGuard />
         <StatusBar style="dark" />
         <View style={{ flex: 1 }}>
-          <Stack
-            screenOptions={{
-              headerShown: false,
-              contentStyle: { backgroundColor: colors.neutral.background },
-            }}
-          />
+          <AuthRouteGate>
+            <Stack
+              screenOptions={{
+                headerShown: false,
+                contentStyle: { backgroundColor: colors.neutral.background },
+              }}
+            />
+          </AuthRouteGate>
           <XPFlyout style={{ bottom: 160, left: 0, position: "absolute", right: 0 }} />
           <StreakCelebration />
         </View>
