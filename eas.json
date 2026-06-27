@@ -13,6 +13,7 @@
         "buildType": "apk"
       },
       "distribution": "internal",
+      "environment": "preview",
       "env": {
         "EXPO_PUBLIC_USE_BACKEND": "true",
         "EXPO_PUBLIC_FLASHLY_AUTH_MODE": "clerk",

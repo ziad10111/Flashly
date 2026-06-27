@@ -23,6 +23,7 @@
     "check:staging-deployment": "node scripts/check-staging-deployment.js",
     "test:postgres-config": "node scripts/test-postgres-config.js",
     "test:nvidia-provider": "tsx scripts/test-nvidia-generation-provider.ts",
+    "test:android-startup": "tsx scripts/test-android-startup.ts",
     "test:navigation": "tsx scripts/test-navigation.ts",
     "test:upgrade-page": "tsx scripts/test-upgrade-page.ts",
     "test:deck-deletion": "tsx scripts/test-deck-deletion.ts",

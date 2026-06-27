@@ -6,7 +6,7 @@ import * as SplashScreen from "expo-splash-screen";
 import { StatusBar } from "expo-status-bar";
 import * as SystemUI from "expo-system-ui";
 import { type ReactNode, useEffect, useRef } from "react";
-import { View } from "react-native";
+import { StyleSheet, Text, View } from "react-native";
 import { PostHogProvider } from "posthog-react-native";
 
 import { apiRequest } from "@/api/client";
@@ -18,6 +18,10 @@ import { setApiAuthTokenProvider } from "@/api/authToken";
 import { useStudySelectionStore } from "@/store/useStudySelectionStore";
 import { initializeClientSentry, withSentryRoot } from "@/lib/monitoring/sentryClient";
 import { ROUTES, isProtectedRootSegment, logNavigation } from "@/lib/navigation/routes";
+import {
+  validateStartupConfiguration,
+  type StartupConfigurationReady,
+} from "@/lib/startup/startupConfiguration";
 import { colors, useAppFonts } from "@/theme";
 
 initializeClientSentry();
@@ -26,7 +30,9 @@ SplashScreen.preventAutoHideAsync().catch(() => {
   // Ignore duplicate prevention during fast refresh.
 });
 
-const publishableKey = process.env.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY;
+const clerkPublishableKey = process.env.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY;
+const postHogKey = process.env.EXPO_PUBLIC_POSTHOG_KEY;
+const postHogHost = process.env.EXPO_PUBLIC_POSTHOG_HOST;
 
 function ApiAuthTokenBridge() {
   const { getToken, isLoaded, isSignedIn, userId } = useAuth();
@@ -87,8 +93,48 @@ function AuthRouteGate({ children }: { children: ReactNode }) {
   return children;
 }
 
+function StartupConfigurationScreen() {
+  return (
+    <View style={styles.configurationScreen}>
+      <View style={styles.configurationPanel}>
+        <Text style={styles.configurationTitle}>Flashly needs a configuration update</Text>
+        <Text style={styles.configurationMessage}>
+          A required mobile sign-in setting is missing from this build. Please install the latest preview build after
+          the app environment is updated.
+        </Text>
+      </View>
+    </View>
+  );
+}
+
+function AnalyticsProvider({
+  children,
+  configuration,
+}: {
+  children: ReactNode;
+  configuration: StartupConfigurationReady;
+}) {
+  if (!configuration.postHogKey) {
+    return <>{children}</>;
+  }
+
+  return (
+    <PostHogProvider
+      apiKey={configuration.postHogKey}
+      options={configuration.postHogHost ? { host: configuration.postHogHost } : undefined}
+    >
+      {children}
+    </PostHogProvider>
+  );
+}
+
 function RootLayout() {
   const [fontsLoaded] = useAppFonts();
+  const startupConfiguration = validateStartupConfiguration({
+    clerkPublishableKey,
+    postHogHost,
+    postHogKey,
+  });
 
   useEffect(() => {
     SystemUI.setBackgroundColorAsync(colors.neutral.background).catch(() => {
@@ -119,16 +165,13 @@ function RootLayout() {
     return <View style={{ flex: 1, backgroundColor: colors.neutral.background }} />;
   }
 
-  if (!publishableKey) {
-    throw new Error("Add EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY to the .env file.");
+  if (!startupConfiguration.isReady) {
+    return <StartupConfigurationScreen />;
   }
 
   return (
-    <PostHogProvider
-      apiKey={process.env.EXPO_PUBLIC_POSTHOG_KEY!}
-      options={{ host: process.env.EXPO_PUBLIC_POSTHOG_HOST }}
-    >
-      <ClerkProvider publishableKey={publishableKey} tokenCache={tokenCache}>
+    <AnalyticsProvider configuration={startupConfiguration}>
+      <ClerkProvider publishableKey={startupConfiguration.clerkPublishableKey} tokenCache={tokenCache}>
         <ApiAuthTokenBridge />
         <StatusBar style="dark" />
         <View style={{ flex: 1 }}>
@@ -144,8 +187,42 @@ function RootLayout() {
           <StreakCelebration />
         </View>
       </ClerkProvider>
-    </PostHogProvider>
+    </AnalyticsProvider>
   );
 }
+
+const styles = StyleSheet.create({
+  configurationMessage: {
+    color: colors.neutral.textSecondary,
+    fontSize: 15,
+    lineHeight: 22,
+    textAlign: "center",
+  },
+  configurationPanel: {
+    backgroundColor: colors.neutral.surface,
+    borderColor: colors.neutral.border,
+    borderRadius: 8,
+    borderWidth: 1,
+    maxWidth: 360,
+    paddingHorizontal: 20,
+    paddingVertical: 22,
+    rowGap: 10,
+    width: "100%",
+  },
+  configurationScreen: {
+    alignItems: "center",
+    backgroundColor: colors.neutral.background,
+    flex: 1,
+    justifyContent: "center",
+    padding: 24,
+  },
+  configurationTitle: {
+    color: colors.neutral.textPrimary,
+    fontSize: 19,
+    fontWeight: "800",
+    lineHeight: 24,
+    textAlign: "center",
+  },
+});
 
 export default withSentryRoot(RootLayout);
