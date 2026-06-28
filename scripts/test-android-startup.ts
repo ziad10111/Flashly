@@ -110,6 +110,35 @@ assert.equal(
   "Root layout must pass explicit public values instead of process.env.",
 );
 assert.equal(
+  rootLayoutSource.includes("useSegments"),
+  false,
+  "Root auth routing must not depend on Expo Router segments arrays during startup.",
+);
+assert.equal(
+  rootLayoutSource.includes("router.dismissAll()"),
+  false,
+  "Root auth routing must not chain dismissAll with replace during startup.",
+);
+assert.equal(
+  rootLayoutSource.includes("usePathname"),
+  true,
+  "Root auth routing should use a stable pathname during startup.",
+);
+assert.equal(
+  rootLayoutSource.includes("createAuthRedirectGuard"),
+  true,
+  "Root auth routing should suppress duplicate startup redirects.",
+);
+assert.equal(
+  rootLayoutSource.includes('style={styles.authRouteOverlay}'),
+  true,
+  "Root auth routing should keep the navigator mounted while covering protected startup routes.",
+);
+assert(
+  rootLayoutSource.indexOf("return <StartupConfigurationScreen />") < rootLayoutSource.indexOf("<AuthRouteGate>"),
+  "Startup configuration fallback should render before auth routing is mounted.",
+);
+assert.equal(
   startupConfigurationSource.includes("process.env"),
   false,
   "Startup configuration validation must not read process.env.",

@@ -1,7 +1,7 @@
 import "../../global.css";
 import { ClerkProvider, useAuth } from "@clerk/expo";
 import { tokenCache } from "@clerk/expo/token-cache";
-import { Stack, useRouter, useSegments } from "expo-router";
+import { Stack, usePathname, useRouter } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import { StatusBar } from "expo-status-bar";
 import * as SystemUI from "expo-system-ui";
@@ -17,7 +17,14 @@ import type { SubscriptionStatusResponse } from "@/api/contracts";
 import { setApiAuthTokenProvider } from "@/api/authToken";
 import { useStudySelectionStore } from "@/store/useStudySelectionStore";
 import { initializeClientSentry, withSentryRoot } from "@/lib/monitoring/sentryClient";
-import { ROUTES, isProtectedRootSegment, logNavigation } from "@/lib/navigation/routes";
+import {
+  createAuthRedirectGuard,
+  getAuthRedirectDestination,
+  isProtectedAuthPathname,
+  isSignedInRedirectPathname,
+  normalizeAuthPathname,
+} from "@/lib/navigation/authRedirect";
+import { getPostAuthRoute, logNavigation } from "@/lib/navigation/routes";
 import {
   validateStartupConfiguration,
   type StartupConfigurationReady,
@@ -57,40 +64,54 @@ function ApiAuthTokenBridge() {
 function AuthRouteGate({ children }: { children: ReactNode }) {
   const { isLoaded, isSignedIn } = useAuth();
   const router = useRouter();
-  const segments = useSegments();
-  const redirectedPathRef = useRef<string | null>(null);
-  const rootSegment = segments[0];
-  const isProtectedRoute = isProtectedRootSegment(rootSegment);
-  const shouldRedirectToSignIn = FLASHLY_AUTH_MODE === "clerk" && isLoaded && !isSignedIn && isProtectedRoute;
+  const pathname = normalizeAuthPathname(usePathname());
+  const authRedirectGuardRef = useRef(createAuthRedirectGuard());
+  const hasHydrated = useStudySelectionStore((state) => state.hasHydrated);
+  const selectedStudyType = useStudySelectionStore((state) => state.selectedStudyType);
+  const isProtectedRoute = isProtectedAuthPathname(pathname);
+  const signedInDestination = getPostAuthRoute(Boolean(selectedStudyType));
+  const redirectDestination =
+    FLASHLY_AUTH_MODE === "clerk"
+      ? getAuthRedirectDestination({
+          canRedirectSignedIn: hasHydrated,
+          isLoaded,
+          isProtectedRoute,
+          isSignedIn: Boolean(isSignedIn),
+          pathname,
+          signedInDestination,
+        })
+      : null;
 
   useEffect(() => {
-    if (!shouldRedirectToSignIn) {
-      redirectedPathRef.current = null;
+    if (FLASHLY_AUTH_MODE !== "clerk" || !redirectDestination) {
+      authRedirectGuardRef.current.reset();
       return;
     }
 
-    const sourcePath = segments.join("/") || "/";
-
-    if (redirectedPathRef.current === sourcePath) {
+    if (!authRedirectGuardRef.current.shouldNavigate({ destination: redirectDestination, pathname })) {
       return;
     }
 
-    redirectedPathRef.current = sourcePath;
     logNavigation({
       action: "auth-guard-redirect",
-      from: sourcePath,
-      reason: "signed-out protected route",
-      to: ROUTES.signIn,
+      from: pathname,
+      reason: isSignedIn ? "signed-in auth route" : "signed-out protected route",
+      to: redirectDestination,
     });
-    router.dismissAll();
-    router.replace(ROUTES.signIn as never);
-  }, [router, segments, shouldRedirectToSignIn]);
+    router.replace(redirectDestination as never);
+  }, [isSignedIn, pathname, redirectDestination, router]);
 
-  if (FLASHLY_AUTH_MODE === "clerk" && isProtectedRoute && (!isLoaded || !isSignedIn)) {
-    return <View style={{ flex: 1, backgroundColor: colors.neutral.background }} />;
-  }
+  const shouldCoverRoute =
+    FLASHLY_AUTH_MODE === "clerk" &&
+    ((isProtectedRoute && (!isLoaded || !isSignedIn)) ||
+      (Boolean(isSignedIn) && !hasHydrated && isSignedInRedirectPathname(pathname)));
 
-  return children;
+  return (
+    <>
+      {children}
+      {shouldCoverRoute ? <View pointerEvents="auto" style={styles.authRouteOverlay} /> : null}
+    </>
+  );
 }
 
 function StartupConfigurationScreen() {
@@ -192,6 +213,10 @@ function RootLayout() {
 }
 
 const styles = StyleSheet.create({
+  authRouteOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: colors.neutral.background,
+  },
   configurationMessage: {
     color: colors.neutral.textSecondary,
     fontSize: 15,

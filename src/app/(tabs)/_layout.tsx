@@ -13,16 +13,12 @@ export default function TabsLayout() {
   const hasHydrated = useStudySelectionStore((state) => state.hasHydrated);
   const selectedStudyType = useStudySelectionStore((state) => state.selectedStudyType);
 
-  if ((FLASHLY_AUTH_MODE === "clerk" && !isLoaded) || !hasHydrated) {
+  if ((FLASHLY_AUTH_MODE === "clerk" && (!isLoaded || !isSignedIn)) || !hasHydrated) {
     return (
       <View className="flex-1 items-center justify-center bg-lingua-background px-6">
         <ActivityIndicator size="large" color={colors.primary.purple} />
       </View>
     );
-  }
-
-  if (FLASHLY_AUTH_MODE === "clerk" && !isSignedIn) {
-    return <Redirect href={ROUTES.signIn as never} />;
   }
 
   if (!selectedStudyType) {

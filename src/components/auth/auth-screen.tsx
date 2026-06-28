@@ -83,7 +83,6 @@ export function AuthScreen({ mode }: AuthScreenProps) {
   const { signUp } = useSignUp();
   const { signIn } = useSignIn();
   const { startSSOFlow } = useSSO();
-  const hasHydrated = useStudySelectionStore((state) => state.hasHydrated);
   const selectedStudyType = useStudySelectionStore((state) => state.selectedStudyType);
   const { width } = useWindowDimensions();
   const [activeSocialProvider, setActiveSocialProvider] = useState<string | null>(null);
@@ -347,15 +346,11 @@ export function AuthScreen({ mode }: AuthScreenProps) {
   }
 
   if (isSignedIn) {
-    if (!hasHydrated) {
-      return (
-        <View className="flex-1 items-center justify-center bg-lingua-background px-6">
-          <ActivityIndicator size="large" color={colors.primary.purple} />
-        </View>
-      );
-    }
-
-    return <Redirect href={postAuthRoute as never} />;
+    return (
+      <View className="flex-1 items-center justify-center bg-lingua-background px-6">
+        <ActivityIndicator size="large" color={colors.primary.purple} />
+      </View>
+    );
   }
 
   return (
