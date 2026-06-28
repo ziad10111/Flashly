@@ -1,6 +1,7 @@
 import type { ApiErrorDTO } from "./contracts";
 import { API_BASE_URL } from "./config";
 import { getApiAuthToken } from "./authToken";
+import { createApiRequestHeaders, type ApiRequestMethod } from "./requestHeaders";
 
 export type ApiAuthTokenProvider = () => Promise<string | null> | string | null;
 
@@ -11,7 +12,7 @@ export type ApiRequestOptions<TBody = unknown> = {
   debugMeta?: Record<string, unknown>;
   getAuthToken?: ApiAuthTokenProvider;
   headers?: HeadersInit;
-  method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
+  method?: ApiRequestMethod;
 };
 
 export class FlashlyApiError extends Error {
@@ -58,21 +59,18 @@ export const apiRequest = async <TResponse, TBody = unknown>(
   options: ApiRequestOptions<TBody> = {},
 ): Promise<TResponse> => {
   const startedAt = Date.now();
-  const headers = new Headers(options.headers);
-  headers.set("Accept", "application/json");
-
-  if (options.body !== undefined) {
-    headers.set("Content-Type", "application/json");
-  }
+  const method = options.method ?? "GET";
 
   const authToken = options.authToken ?? (await options.getAuthToken?.()) ?? (await getApiAuthToken());
-
-  if (authToken) {
-    headers.set("Authorization", `Bearer ${authToken}`);
-  }
+  const headers = createApiRequestHeaders({
+    authToken,
+    hasBody: options.body !== undefined,
+    headers: options.headers,
+    method,
+  });
 
   const response = await fetch(buildUrl(path), {
-    method: options.method ?? "GET",
+    method,
     headers,
     body: options.body === undefined ? undefined : JSON.stringify(options.body),
   });

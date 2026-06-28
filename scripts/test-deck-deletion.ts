@@ -6,6 +6,7 @@ import {
   shouldApplyGeneratedDeckMutation,
   shouldTreatBackendDeleteErrorAsSuccessfulCleanup,
 } from "../src/api/repositories/deckDeletion";
+import { createApiRequestHeaders, shouldUseJsonContentType } from "../src/api/requestHeaders";
 
 const assert = (condition: unknown, message: string) => {
   if (!condition) {
@@ -90,6 +91,25 @@ assert(!isLegacyLocalOrMockDeckId("3f8f1025-7ce2-4457-a511-94667957fb21"), "UUID
 assert(shouldTreatBackendDeleteErrorAsSuccessfulCleanup(404), "Backend 404 should clean up stale local decks.");
 assert(!shouldTreatBackendDeleteErrorAsSuccessfulCleanup(500), "Backend 500 should remain a genuine failure.");
 assert(!shouldTreatBackendDeleteErrorAsSuccessfulCleanup(undefined), "Network failure should remain retryable.");
+
+assert(
+  shouldUseJsonContentType({ hasBody: false, method: "DELETE" }),
+  "Bodyless DELETE API requests should still use JSON content type for backend security checks.",
+);
+assert(
+  createApiRequestHeaders({ hasBody: false, method: "DELETE" }).get("Content-Type") === "application/json",
+  "Deck deletion should send Content-Type: application/json even without a request body.",
+);
+assert(
+  createApiRequestHeaders({ hasBody: false, method: "GET" }).get("Content-Type") === null,
+  "GET requests should not add an unnecessary content type.",
+);
+assert(
+  createApiRequestHeaders({ hasBody: false, headers: { "Content-Type": "text/plain" }, method: "DELETE" }).get(
+    "Content-Type",
+  ) === "text/plain",
+  "Explicit content type headers should be preserved for bodyless mutating requests.",
+);
 
 assert(
   shouldApplyGeneratedDeckMutation({ deckId: "deck-a", deletedDeckIds: ["deck-b"] }),
