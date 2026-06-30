@@ -57,7 +57,7 @@ function DeckIcon({
 }
 
 function getDeckMetaLine(deck: DeckDTO) {
-  if (deck.status === "processing" || deck.status === "generating" || deck.status === "partial-error") {
+  if (deck.status === "processing" || deck.status === "generating" || deck.status === "partial-error" || deck.status === "cancelled") {
     return `${deck.cardCount} cards`;
   }
 
@@ -71,6 +71,10 @@ function getDeckStatusLine(deck: DeckDTO) {
 
   if (deck.status === "partial-error") {
     return "Generation paused. Available cards are ready.";
+  }
+
+  if (deck.status === "cancelled") {
+    return "Generation cancelled. Available cards are saved.";
   }
 
   if (deck.weakCardCount > 0) {
@@ -117,11 +121,12 @@ function DeckRow({
   onPress: () => void;
 }) {
   const isGeneratingDeck = deck.status === "generating" || deck.status === "partial-error" || deck.status === "processing";
+  const isCancelledDeck = deck.status === "cancelled";
   const hasWeakCards = deck.weakCardCount > 0 && !isGeneratingDeck;
   const progressWidth = isGeneratingDeck
     ? Math.min(Math.max(deck.completionPercentage, deck.cardCount > 0 ? 34 : 12), 88)
     : Math.min(Math.max(deck.completionPercentage, 0), 100);
-  const statusColor = hasWeakCards ? "#FF4D4F" : isGeneratingDeck ? "#6C4EF5" : "#5D678A";
+  const statusColor = hasWeakCards ? "#FF4D4F" : isGeneratingDeck ? "#6C4EF5" : isCancelledDeck ? "#5B6275" : "#5D678A";
 
   return (
     <PressableScale

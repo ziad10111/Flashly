@@ -9,7 +9,7 @@ export const databaseDeckRepository: ServerDeckRepository = {
       const user = await ensureDatabaseUser(context?.userId ?? "mock-clerk-user-flashly", client);
       const deckResult = await client.query(
         `
-          SELECT id
+          SELECT id, generation_job_id
           FROM decks
           WHERE id = $1 AND user_id = $2
           LIMIT 1
@@ -21,6 +21,50 @@ export const databaseDeckRepository: ServerDeckRepository = {
         return;
       }
 
+      const generationJobId =
+        typeof deckResult.rows[0]?.generation_job_id === "string" ? deckResult.rows[0].generation_job_id : null;
+
+      await client.query(
+        `
+          INSERT INTO deck_deletion_tombstones (deck_id, user_id, generation_job_id)
+          VALUES ($1, $2, $3)
+          ON CONFLICT (deck_id, user_id)
+          DO UPDATE SET generation_job_id = COALESCE(EXCLUDED.generation_job_id, deck_deletion_tombstones.generation_job_id)
+        `,
+        [deckId, user.id, generationJobId],
+      );
+      await client.query(
+        `
+          UPDATE generation_batches
+          SET status = CASE WHEN status = 'completed' THEN status ELSE 'cancelled' END,
+              last_error_message = CASE WHEN status = 'completed' THEN last_error_message ELSE 'Deck was deleted.' END,
+              lease_expires_at = NULL,
+              completed_at = CASE WHEN status = 'completed' THEN completed_at ELSE now() END,
+              updated_at = now()
+          WHERE user_id = $2
+            AND generation_job_id IN (
+              SELECT id
+              FROM generation_jobs
+              WHERE user_id = $2 AND (deck_id = $1 OR id = $3)
+            )
+        `,
+        [deckId, user.id, generationJobId],
+      );
+      await client.query(
+        `
+          UPDATE generation_jobs
+          SET status = 'cancelled',
+              stage = 'cancelled',
+              cancelled_at = COALESCE(cancelled_at, now()),
+              completed_at = COALESCE(completed_at, now()),
+              last_error_message = 'Deck was deleted.',
+              updated_at = now()
+          WHERE user_id = $2
+            AND (deck_id = $1 OR id = $3)
+            AND status NOT IN ('complete', 'completed', 'failed', 'cancelled')
+        `,
+        [deckId, user.id, generationJobId],
+      );
       await client.query("DELETE FROM review_answers WHERE deck_id = $1 AND user_id = $2", [deckId, user.id]);
       await client.query("DELETE FROM review_sessions WHERE deck_id = $1 AND user_id = $2", [deckId, user.id]);
       await client.query("DELETE FROM progress WHERE deck_id = $1 AND user_id = $2", [deckId, user.id]);

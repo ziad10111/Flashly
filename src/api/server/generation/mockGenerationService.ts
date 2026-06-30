@@ -24,14 +24,15 @@ const createMockGeneratedDeck = (input: PrepareGenerationInput): DeckDTO => ({
 const generateMockFlashcardDTOs = async (input: GenerateFlashcardDTOsInput) => ({
   cards: Array.from({ length: input.metadata.requestedCardCount }, (_, index) => {
     const template = mockFlashcards[index % mockFlashcards.length];
+    const position = (input.metadata.batchMode === "batch" ? input.metadata.startQuestionIndex ?? 0 : 0) + index;
 
     return {
       ...template,
-      id: `mock-generated-card-${input.materialId}-${index + 1}`,
+      id: `mock-generated-card-${input.materialId}-${position + 1}`,
       deckId: input.deckId,
       difficulty: input.metadata.difficulty ?? template.difficulty,
-      position: index,
-      sourceChunkId: `mock-source-chunk-${index + 1}`,
+      position,
+      sourceChunkId: `mock-source-chunk-${position + 1}`,
       topic: input.metadata.topicFocus[index % input.metadata.topicFocus.length] ?? template.topic,
     };
   }),

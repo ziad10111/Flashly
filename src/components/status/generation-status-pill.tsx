@@ -1,19 +1,40 @@
 import { Text, View } from "react-native";
 
 type GenerationStatusPillProps = {
-  status?: "generating" | "complete" | "partial-error";
+  status?:
+    | "queued"
+    | "processing"
+    | "partial"
+    | "completed"
+    | "failed"
+    | "cancelled"
+    | "generating"
+    | "complete"
+    | "partial-error";
 };
 
 const getStatusConfig = (status: GenerationStatusPillProps["status"]) => {
-  if (status === "generating") {
+  if (status === "queued") {
+    return { label: "Queued", tint: "#EAF1FF", color: "#2563EB" };
+  }
+
+  if (status === "generating" || status === "processing") {
     return { label: "Generating", tint: "#F3EFFF", color: "#6C4EF5" };
   }
 
-  if (status === "partial-error") {
+  if (status === "partial" || status === "partial-error") {
     return { label: "Partial", tint: "#FFF4EC", color: "#C96A00" };
   }
 
-  if (status === "complete") {
+  if (status === "failed") {
+    return { label: "Failed", tint: "#FFF0F0", color: "#C43D32" };
+  }
+
+  if (status === "cancelled") {
+    return { label: "Cancelled", tint: "#EEF0F4", color: "#5B6275" };
+  }
+
+  if (status === "complete" || status === "completed") {
     return { label: "Complete", tint: "#E8FFF2", color: "#158A4B" };
   }
 

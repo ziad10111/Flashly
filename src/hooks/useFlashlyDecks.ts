@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 
 import { getDecks } from "@/api/repositories/deckRepository";
+import { getActiveGenerationJobs } from "@/api/repositories/generationJobRepository";
 import { getProgressSummary } from "@/api/repositories/progressRepository";
 import { useFlashlyProgressStore } from "@/store/useFlashlyProgressStore";
 import { useFlashlyUploadStore } from "@/store/useFlashlyUploadStore";
@@ -40,9 +41,14 @@ export function useFlashlyDecks() {
 
       try {
         const [deckResponse, progressResponse] = await Promise.all([getDecks(), getProgressSummary()]);
+        const activeJobsResponse = await getActiveGenerationJobs().catch(() => ({ jobs: [] }));
 
         if (!isMounted) {
           return;
+        }
+
+        for (const job of activeJobsResponse.jobs) {
+          useFlashlyUploadStore.getState().syncGenerationJob(job);
         }
 
         setState({

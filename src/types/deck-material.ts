@@ -7,6 +7,7 @@ export type DeckMaterialStatus =
   | "generating"
   | "in-progress"
   | "partial-error"
+  | "cancelled"
   | "weak-cards"
   | "completed";
 

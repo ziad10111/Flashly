@@ -5,6 +5,10 @@ import * as assistantConversationsByDeckRoute from "@/app/api/assistant/conversa
 import * as revenueCatWebhookRoute from "@/app/api/billing/revenuecat/webhook+api";
 import * as deckByIdRoute from "@/app/api/decks/[id]+api";
 import * as decksRoute from "@/app/api/decks+api";
+import * as generationJobByIdRoute from "@/app/api/generation-jobs/[jobId]+api";
+import * as generationJobCancelRoute from "@/app/api/generation-jobs/[jobId]/cancel+api";
+import * as generationJobRetryRoute from "@/app/api/generation-jobs/[jobId]/retry+api";
+import * as generationJobsRoute from "@/app/api/generation-jobs+api";
 import * as materialExtractRoute from "@/app/api/materials/[id]/extract+api";
 import * as materialGenerateRoute from "@/app/api/materials/[id]/generate-flashcards+api";
 import * as subscriptionRoute from "@/app/api/me/subscription+api";
@@ -43,6 +47,7 @@ import { formatReleaseForLog, getReleaseMetadata } from "@/api/server/releaseMet
 import { runWithRequestContext } from "@/api/server/requestContext";
 import { storageService } from "@/api/server/storage";
 import { checkCloudStorageReadiness } from "@/api/server/storage/readiness";
+import { startGenerationWorkerLoop } from "@/api/server/generationJobs/worker";
 
 initializeServerSentry();
 
@@ -80,6 +85,16 @@ const routes: {
   { match: exact("/api/billing/revenuecat/webhook"), route: revenueCatWebhookRoute },
   { match: exact("/api/decks"), route: decksRoute },
   { match: pattern(/^\/api\/decks\/([^/]+)$/u, ["id"]), route: deckByIdRoute },
+  { match: exact("/api/generation-jobs"), route: generationJobsRoute },
+  { match: pattern(/^\/api\/generation-jobs\/([^/]+)$/u, ["jobId"]), route: generationJobByIdRoute },
+  {
+    match: pattern(/^\/api\/generation-jobs\/([^/]+)\/cancel$/u, ["jobId"]),
+    route: generationJobCancelRoute,
+  },
+  {
+    match: pattern(/^\/api\/generation-jobs\/([^/]+)\/retry$/u, ["jobId"]),
+    route: generationJobRetryRoute,
+  },
   { match: pattern(/^\/api\/materials\/([^/]+)\/extract$/u, ["id"]), route: materialExtractRoute },
   { match: pattern(/^\/api\/materials\/([^/]+)\/generate-flashcards$/u, ["id"]), route: materialGenerateRoute },
   { match: exact("/api/me/subscription"), route: subscriptionRoute },
@@ -505,4 +520,5 @@ createServer((request, response) => {
   void handleRequest(request, response);
 }).listen(port, host, () => {
   console.info(`Flashly backend listening on ${host}:${port} (${startupValidation.environment}) ${formatReleaseForLog()}`);
+  startGenerationWorkerLoop();
 });

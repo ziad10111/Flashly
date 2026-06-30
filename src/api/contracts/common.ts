@@ -58,12 +58,22 @@ export type DeckStatusDTO =
   | "generating"
   | "in-progress"
   | "partial-error"
+  | "cancelled"
   | "completed"
   | "needs-review";
 
 export type FlashcardDifficultyDTO = "easy" | "medium" | "hard";
 
-export type FlashcardGenerationStatusDTO = "queued" | "generating" | "validating" | "complete" | "partial" | "failed";
+export type FlashcardGenerationStatusDTO =
+  | "queued"
+  | "generating"
+  | "processing"
+  | "validating"
+  | "complete"
+  | "completed"
+  | "partial"
+  | "failed"
+  | "cancelled";
 
 export type FlashcardGenerationStageDTO =
   | "queued"

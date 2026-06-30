@@ -243,8 +243,14 @@ export default function ReviewSessionScreen() {
 
   const deck = deckResponse?.deck ?? null;
   const currentCard = cards[currentIndex];
-  const isDeckGenerating = generatedDeck?.generationStatus === "generating";
-  const isDeckPartialError = generatedDeck?.generationStatus === "partial-error";
+  const isDeckGenerating =
+    generatedDeck?.generationStatus === "queued" ||
+    generatedDeck?.generationStatus === "processing" ||
+    generatedDeck?.generationStatus === "generating";
+  const isDeckPartialError =
+    generatedDeck?.generationStatus === "partial" ||
+    generatedDeck?.generationStatus === "failed" ||
+    generatedDeck?.generationStatus === "partial-error";
   const progressValue = cards.length > 0 ? (isFinished ? 1 : currentIndex / cards.length) : 0;
   const isMcqCard = currentCard?.type === "mcq" && (currentCard.choices?.length ?? 0) >= 2 && Boolean(currentCard.correctChoiceId);
   const selectedChoice = currentCard?.choices?.find((choice) => choice.id === selectedChoiceId);
@@ -385,7 +391,7 @@ export default function ReviewSessionScreen() {
           <Text selectable className="mt-2 text-[15px] leading-[23px] text-[#EAE4FF]">
             {isDeckPartialError
               ? "You can retry from Deck Detail, or finish this session with the cards already available."
-              : `${cards.length} cards are ready now${generatedDeck?.expectedCardCount ? ` out of about ${generatedDeck.expectedCardCount}` : ""}. New cards will appear here automatically.`}
+              : `${cards.length} cards are ready now${generatedDeck?.expectedCardCount ? ` out of about ${generatedDeck.expectedCardCount}` : ""}. New cards will appear here after the backend saves each batch.`}
           </Text>
         </Animated.View>
 

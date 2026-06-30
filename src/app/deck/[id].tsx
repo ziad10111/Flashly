@@ -2,11 +2,12 @@ import { SymbolView, type AndroidSymbol, type SFSymbol } from "expo-symbols";
 import semiBold from "expo-symbols/androidWeights/semiBold";
 import { Redirect, router, useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, Alert, ScrollView, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Alert, AppState, ScrollView, StyleSheet, Text, View } from "react-native";
 import Animated, { FadeInDown } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import type { GetDeckResponse } from "@/api/contracts";
+import { getGenerationJob, retryGenerationJob } from "@/api/repositories/generationJobRepository";
 import { deleteDeck, getCardsForDeck, getDeckById } from "@/api/repositories/deckRepository";
 import { PressableScale } from "@/components/animated/pressable-scale";
 import { AnimatedOwl } from "@/components/mascot/animated-owl";
@@ -16,14 +17,9 @@ import { triggerLightHaptic, triggerSuccessHaptic } from "@/lib/feedback/haptics
 import { celebrateXp } from "@/lib/feedback/xpCelebration";
 import { safeBack } from "@/lib/navigation/safeBack";
 import { ROUTES, createDeckRoute, createReviewRoute, getInvalidDeckFallbackRoute, logNavigation } from "@/lib/navigation/routes";
-import {
-  BACKGROUND_BATCH_CARD_COUNT,
-  MAX_PROGRESSIVE_PDF_CARDS,
-  runRemainingGeneratedDeckBatches,
-} from "@/lib/progressive-generation";
 import { useActiveDeckStore } from "@/store/useActiveDeckStore";
 import { useFlashlyProgressStore } from "@/store/useFlashlyProgressStore";
-import { useFlashlyUploadStore } from "@/store/useFlashlyUploadStore";
+import { type GeneratedDeckGenerationStatus, useFlashlyUploadStore } from "@/store/useFlashlyUploadStore";
 
 type LoadState = "loading" | "ready" | "not-found" | "error";
 
@@ -118,18 +114,36 @@ const formatReviewedDate = (value: string) => {
 };
 
 const getHeroSubtitle = (status: GeneratedStatus | undefined) => {
-  if (status === "generating") {
-    return "More cards are still being created.";
+  if (isQueuedStatus(status)) {
+    return "Generation is queued on the backend.";
   }
 
-  if (status === "partial-error") {
-    return "Some cards failed. You can retry remaining cards.";
+  if (isGeneratingStatus(status)) {
+    return "More cards are still being created on the backend.";
+  }
+
+  if (isPartialStatus(status)) {
+    return "Some server batches failed. You can retry them.";
+  }
+
+  if (status === "cancelled") {
+    return "Generation was cancelled.";
   }
 
   return "Your cards are ready to review.";
 };
 
-type GeneratedStatus = "generating" | "complete" | "partial-error";
+type GeneratedStatus = GeneratedDeckGenerationStatus;
+
+const isQueuedStatus = (status: GeneratedStatus | undefined) => status === "queued";
+const isGeneratingStatus = (status: GeneratedStatus | undefined) =>
+  status === "generating" || status === "processing";
+const isPartialStatus = (status: GeneratedStatus | undefined) =>
+  status === "partial" || status === "partial-error" || status === "failed";
+const isCompleteStatus = (status: GeneratedStatus | undefined) =>
+  status === "complete" || status === "completed";
+const isObservableGenerationStatus = (status: GeneratedStatus | undefined) =>
+  isQueuedStatus(status) || isGeneratingStatus(status);
 
 function IconBadge({
   color,
@@ -166,14 +180,14 @@ function BackIcon() {
 }
 
 function HeroDeckIcon({ status }: { status: GeneratedStatus | undefined }) {
-  const mood = status === "generating" ? "waiting" : status === "partial-error" ? "wrong" : "success";
+  const mood = isQueuedStatus(status) || isGeneratingStatus(status) ? "waiting" : isPartialStatus(status) ? "wrong" : "success";
 
   return (
     <View className="h-[82px] w-[82px] items-center justify-center rounded-[24px] bg-white/20">
       <AnimatedOwl
         mood={mood}
         size={64}
-        variant={status === "generating" ? "float" : status === "partial-error" ? "bounce" : "celebrate"}
+        variant={isQueuedStatus(status) || isGeneratingStatus(status) ? "float" : isPartialStatus(status) ? "bounce" : "celebrate"}
       />
     </View>
   );
@@ -244,6 +258,7 @@ export default function DeckDetailScreen() {
   const isDeletedDeck = useFlashlyProgressStore((state) => (id ? state.deletedDeckIds.includes(id) : false));
   const generatedDecks = useFlashlyUploadStore((state) => state.generatedDecks);
   const generatedCardsByDeckId = useFlashlyUploadStore((state) => state.generatedCardsByDeckId);
+  const syncGenerationJob = useFlashlyUploadStore((state) => state.syncGenerationJob);
   const generatedDeck = useMemo(
     () => (id ? generatedDecks.find((deck) => deck.id === id) : undefined),
     [generatedDecks, id],
@@ -267,7 +282,7 @@ export default function DeckDetailScreen() {
     const previousStatus = previousGenerationStatusRef.current;
     previousGenerationStatusRef.current = generationStatus;
 
-    if (previousStatus && previousStatus !== "complete" && generationStatus === "complete") {
+    if (previousStatus && !isCompleteStatus(previousStatus as GeneratedStatus) && isCompleteStatus(generationStatus)) {
       triggerSuccessHaptic();
       celebrateXp(25, "deck");
     }
@@ -313,6 +328,61 @@ export default function DeckDetailScreen() {
       isMounted = false;
     };
   }, [generatedCardsByDeckId, generatedDecks, id, isDeletedDeck]);
+
+  useEffect(() => {
+    const jobId = generatedDeck?.generationJobId;
+
+    if (!jobId || !isObservableGenerationStatus(generationStatus) || isDeletedDeck) {
+      return;
+    }
+
+    let isMounted = true;
+
+    const refreshGenerationJob = async () => {
+      if (AppState.currentState !== "active") {
+        return;
+      }
+
+      try {
+        const job = await getGenerationJob(jobId);
+
+        if (!isMounted || isDeletedDeck) {
+          return;
+        }
+
+        const response = await getDeckById(job.deckId);
+
+        if (!isMounted || isDeletedDeck) {
+          return;
+        }
+
+        syncGenerationJob(job, response?.cards);
+
+        if (response) {
+          setDeckResponse(response);
+          setLoadState("ready");
+        }
+      } catch {
+        if (isMounted && isObservableGenerationStatus(generationStatus)) {
+          setLoadState((current) => (current === "ready" ? current : "error"));
+        }
+      }
+    };
+
+    void refreshGenerationJob();
+    const interval = setInterval(() => void refreshGenerationJob(), 3500);
+    const appStateSubscription = AppState.addEventListener("change", (state) => {
+      if (state === "active") {
+        void refreshGenerationJob();
+      }
+    });
+
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+      appStateSubscription.remove();
+    };
+  }, [generatedDeck?.generationJobId, generationStatus, isDeletedDeck, syncGenerationJob]);
 
   useEffect(() => {
     if (loadState !== "not-found") {
@@ -383,28 +453,38 @@ export default function DeckDetailScreen() {
   const heroSubtitle = getHeroSubtitle(generationStatus);
   const readyCardCount = cards.length;
   const generationProgress = expectedCardCount ? Math.min(readyCardCount / expectedCardCount, 1) : stats.completion;
-  const heroProgress = generationStatus === "generating" || generationStatus === "partial-error" ? generationProgress : stats.completion;
+  const heroProgress = isQueuedStatus(generationStatus) || isGeneratingStatus(generationStatus) || isPartialStatus(generationStatus)
+    ? generationProgress
+    : stats.completion;
   const heroProgressLabel =
-    generationStatus === "generating" || generationStatus === "partial-error"
+    isQueuedStatus(generationStatus) || isGeneratingStatus(generationStatus) || isPartialStatus(generationStatus)
       ? `${readyCardCount} / ${expectedCardCount ?? readyCardCount} cards ready`
       : `${formatPercent(stats.completion)} complete`;
   const generationStatusLabel =
-    generationStatus === "generating"
+    isQueuedStatus(generationStatus)
+      ? `Queued: ${readyCardCount} / ${expectedCardCount ?? readyCardCount} cards ready`
+      : isGeneratingStatus(generationStatus)
       ? `Generating: ${readyCardCount} / ${expectedCardCount ?? readyCardCount} cards ready`
-      : generationStatus === "partial-error"
+      : isPartialStatus(generationStatus)
         ? `Partial deck: ${readyCardCount} / ${expectedCardCount ?? readyCardCount} cards ready`
-        : generationStatus === "complete"
+        : isCompleteStatus(generationStatus)
           ? "Generation complete"
-          : null;
+          : generationStatus === "cancelled"
+            ? "Generation cancelled"
+            : null;
   const generationWarning =
-    generationStatus === "generating"
-      ? "More cards are being generated in the background."
-      : generationStatus === "partial-error"
-        ? "Some background batches failed. You can study the available cards or retry."
+    isQueuedStatus(generationStatus)
+      ? "Generation is queued on the backend. You can close Flashly safely."
+      : isGeneratingStatus(generationStatus)
+      ? "Generation is continuing on the backend. You can close Flashly safely."
+      : isPartialStatus(generationStatus)
+        ? "Some server batches failed. You can study the available cards or retry the failed batches."
+        : generationStatus === "cancelled"
+          ? "No more cards will be generated for this deck."
         : null;
 
   const handleRetryRemainingCards = async () => {
-    if (!generatedDeck?.generationSourceText || !generatedDeck.idempotencyKey || !generatedDeck.materialId || isRetryingGeneration) {
+    if (!generatedDeck?.generationJobId || isRetryingGeneration) {
       return;
     }
 
@@ -412,15 +492,13 @@ export default function DeckDetailScreen() {
     triggerLightHaptic();
 
     try {
-      await runRemainingGeneratedDeckBatches({
-        batchSize: generatedDeck.backgroundBatchSize ?? BACKGROUND_BATCH_CARD_COUNT,
-        deckId: generatedDeck.id,
-        extractedTextPreview: generatedDeck.generationSourceText,
-        idempotencyKey: generatedDeck.idempotencyKey,
-        materialId: generatedDeck.materialId,
-        maxCards: generatedDeck.maxGeneratedCards ?? MAX_PROGRESSIVE_PDF_CARDS,
-        startQuestionIndex: generatedDeck.nextBatchStartIndex ?? cards.length,
-      });
+      const job = await retryGenerationJob(generatedDeck.generationJobId);
+      const response = await getDeckById(job.deckId);
+      syncGenerationJob(job, response?.cards);
+
+      if (response) {
+        setDeckResponse(response);
+      }
     } finally {
       setIsRetryingGeneration(false);
     }
@@ -532,9 +610,9 @@ export default function DeckDetailScreen() {
           <View className="flex-row items-start">
             <View className="h-[56px] w-[56px] items-center justify-center rounded-[20px] bg-[#F7F4FF]">
               <AnimatedOwl
-                mood={generationStatus === "complete" ? "success" : generationStatus === "partial-error" ? "wrong" : "waiting"}
+                mood={isCompleteStatus(generationStatus) ? "success" : isPartialStatus(generationStatus) ? "wrong" : "waiting"}
                 size={46}
-                variant={generationStatus === "complete" ? "celebrate" : "float"}
+                variant={isCompleteStatus(generationStatus) ? "celebrate" : "float"}
               />
             </View>
             <View className="ml-4 flex-1">
@@ -548,7 +626,7 @@ export default function DeckDetailScreen() {
                   {generationWarning}
                 </Text>
               ) : null}
-              {generationStatus === "partial-error" && generatedDeck?.generationLastError ? (
+              {isPartialStatus(generationStatus) && generatedDeck?.generationLastError ? (
                 <Text selectable className="mt-2 text-[13px] leading-[19px] text-[#8B93AD]">
                   Last error: {generatedDeck.generationLastError}
                 </Text>
@@ -556,10 +634,10 @@ export default function DeckDetailScreen() {
             </View>
           </View>
 
-          {generationStatus === "partial-error" ? (
+          {isPartialStatus(generationStatus) ? (
             <PressableScale
               className={`mt-3 items-center justify-center rounded-[22px] px-5 py-3 ${isRetryingGeneration ? "bg-[#E8E1FF]" : "bg-lingua-purple"}`}
-              disabled={isRetryingGeneration || !generatedDeck?.generationSourceText}
+              disabled={isRetryingGeneration || !generatedDeck?.generationJobId}
               haptic
               onPress={handleRetryRemainingCards}
             >

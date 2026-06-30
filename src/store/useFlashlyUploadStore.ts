@@ -3,7 +3,7 @@ import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 
 import { images } from "@/constants/images";
-import type { GenerateFlashcardsResponse, DeckDTO, FlashcardDTO } from "@/api/contracts";
+import type { GenerateFlashcardsResponse, DeckDTO, FlashcardDTO, GenerationJobDTO } from "@/api/contracts";
 import { shouldApplyGeneratedDeckMutation } from "@/api/repositories/deckDeletion";
 import { isTemplateGeneratedCard } from "@/lib/generated-card-guards";
 import { useFlashlyProgressStore } from "@/store/useFlashlyProgressStore";
@@ -35,10 +35,21 @@ export type GeneratedFlashlyDeck = DeckMaterial & {
   generationLastError?: string;
   maxGeneratedCards?: number;
   nextBatchStartIndex?: number;
-  generationStatus?: "generating" | "complete" | "partial-error";
+  generationStatus?: GeneratedDeckGenerationStatus;
   idempotencyKey?: string;
   materialId: string;
 };
+
+export type GeneratedDeckGenerationStatus =
+  | "queued"
+  | "processing"
+  | "partial"
+  | "completed"
+  | "failed"
+  | "cancelled"
+  | "generating"
+  | "complete"
+  | "partial-error";
 
 type FlashlyUploadState = {
   currentStage: UploadProcessingStage;
@@ -79,6 +90,7 @@ type FlashlyUploadState = {
   setOcrRequired: (ocrRequired: boolean) => void;
   setProcessingStage: (stage: UploadProcessingStage, progressPercentage: number) => void;
   startMockProcessing: () => void;
+  syncGenerationJob: (job: GenerationJobDTO, cards?: FlashcardDTO[]) => void;
 };
 
 export class GeneratedDeckPersistenceError extends Error {
@@ -347,6 +359,14 @@ const deckFromGenerationResponse = (
   status: GeneratedFlashlyDeck["generationStatus"],
 ): GeneratedFlashlyDeck => {
   const deckDto = response.deck;
+  const deckStatus =
+    status === "complete" || status === "completed"
+      ? dtoStatusToDeckStatus(deckDto.status)
+      : status === "partial" || status === "failed" || status === "partial-error"
+        ? "partial-error"
+        : status === "cancelled"
+          ? "cancelled"
+          : "generating";
 
   return {
     id: deckDto.id,
@@ -357,7 +377,7 @@ const deckFromGenerationResponse = (
     cardCount: cards.length,
     reviewedCount: 0,
     progress: 0,
-    status: status === "complete" ? dtoStatusToDeckStatus(deckDto.status) : status ?? "generating",
+    status: deckStatus,
     weakCardCount: 0,
     xpEarned: 0,
     lastReviewedDate: null,
@@ -372,6 +392,62 @@ const deckFromGenerationResponse = (
     generationStatus: status,
     idempotencyKey: response.idempotencyKey,
     materialId: response.materialId,
+  };
+};
+
+const generationJobStatusToDeckStatus = (status: GenerationJobDTO["status"]): DeckMaterialStatus => {
+  if (status === "completed") {
+    return "ready";
+  }
+
+  if (status === "partial" || status === "failed") {
+    return "partial-error";
+  }
+
+  if (status === "cancelled") {
+    return "cancelled";
+  }
+
+  return "generating";
+};
+
+const deckFromGenerationJob = (
+  job: GenerationJobDTO,
+  cards: Flashcard[],
+  existingDeck?: GeneratedFlashlyDeck,
+): GeneratedFlashlyDeck | null => {
+  const deckDto = job.deck;
+
+  if (!deckDto) {
+    return existingDeck ?? null;
+  }
+
+  return {
+    id: deckDto.id,
+    title: deckDto.title,
+    sourceType: dtoSourceTypeToDeckSourceType(deckDto.sourceType),
+    sourceLabel: getGeneratedSourceLabel(deckDto),
+    fileName: deckDto.sourceFileName,
+    cardCount: cards.length || job.completedCardCount || deckDto.cardCount,
+    reviewedCount: existingDeck?.reviewedCount ?? 0,
+    progress: existingDeck?.progress ?? 0,
+    status: generationJobStatusToDeckStatus(job.status),
+    weakCardCount: existingDeck?.weakCardCount ?? 0,
+    xpEarned: existingDeck?.xpEarned ?? 0,
+    lastReviewedDate: existingDeck?.lastReviewedDate ?? null,
+    extractionStatus: "generated",
+    thumbnail: images.studyMaterialIllustration,
+    accentColor: existingDeck?.accentColor ?? "#6C4EF5",
+    tintColor: existingDeck?.tintColor ?? "#F3EFFF",
+    cardSetTitles: getCardSetTitles(cards),
+    createdAt: deckDto.createdAt,
+    expectedCardCount: job.requestedCardCount,
+    failedBatchCount: job.failedBatchCount,
+    generationJobId: job.jobId,
+    generationLastError: job.lastError?.message,
+    generationStatus: job.status,
+    idempotencyKey: existingDeck?.idempotencyKey,
+    materialId: job.materialId,
   };
 };
 
@@ -723,6 +799,35 @@ export const useFlashlyUploadStore = create<FlashlyUploadState>()(
           progressPercentage: 8,
           status: "processing",
           uploadJobId: `upload-job-${slug}-${stableSuffix}`,
+        });
+      },
+      syncGenerationJob: (job, cards) => {
+        const deckId = job.deckId || job.deck?.id;
+
+        if (!deckId || isDeletedGeneratedDeck(deckId)) {
+          return;
+        }
+
+        set((current) => {
+          const existingDeck = current.generatedDecks.find((deck) => deck.id === deckId);
+          const existingCards = current.generatedCardsByDeckId[deckId] ?? [];
+          const incomingCards = (cards ?? []).map(dtoCardToFlashcard).filter(isUsableGeneratedCard);
+          const mergedCards = incomingCards.length > 0 ? mergeGeneratedCards([], incomingCards).cards : existingCards;
+          const deck = deckFromGenerationJob(job, mergedCards, existingDeck);
+
+          if (!deck) {
+            return current;
+          }
+
+          return {
+            generatedCardsByDeckId: {
+              ...current.generatedCardsByDeckId,
+              [deckId]: mergedCards,
+            },
+            generatedDeckId: current.generatedDeckId ?? deckId,
+            generatedDecks: [deck, ...current.generatedDecks.filter((item) => item.id !== deckId)],
+            materialId: current.materialId ?? job.materialId,
+          };
         });
       },
     }),

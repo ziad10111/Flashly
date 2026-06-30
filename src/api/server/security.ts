@@ -43,7 +43,7 @@ export const getClientKey = (headers: Headers) => {
 };
 
 export const getRateLimitBucket = (pathname: string): RateLimitBucket => {
-  if (pathname.includes("/generate-flashcards")) {
+  if (pathname.includes("/generate-flashcards") || pathname.startsWith("/api/generation-jobs")) {
     return "generation";
   }
 

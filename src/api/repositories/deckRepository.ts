@@ -32,10 +32,18 @@ const getLocalGeneratedDecks = (): GetDecksResponse => {
 };
 
 const mergeDeckResponses = (backendResponse: GetDecksResponse, generatedResponse: GetDecksResponse): GetDecksResponse => {
-  const generatedIds = new Set(generatedResponse.decks.map((deck) => deck.id));
+  const backendPersistedGeneratedIds = new Set(
+    useFlashlyUploadStore
+      .getState()
+      .generatedDecks
+      .filter((deck) => Boolean(deck.generationJobId))
+      .map((deck) => deck.id),
+  );
+  const localOnlyGeneratedDecks = generatedResponse.decks.filter((deck) => !backendPersistedGeneratedIds.has(deck.id));
+  const generatedIds = new Set(localOnlyGeneratedDecks.map((deck) => deck.id));
 
   return {
-    decks: [...generatedResponse.decks, ...backendResponse.decks.filter((deck) => !generatedIds.has(deck.id))],
+    decks: [...localOnlyGeneratedDecks, ...backendResponse.decks.filter((deck) => !generatedIds.has(deck.id))],
   };
 };
 
@@ -88,11 +96,15 @@ const getBackendDeckById = async (deckId: string): Promise<GetDeckResponse | nul
 
   const localGenerated = await getLocalDeckById(deckId);
 
-  if (localGenerated?.deck.materialId) {
+  const localGeneratedDeck = useFlashlyUploadStore.getState().generatedDecks.find((deck) => deck.id === deckId);
+
+  if (localGenerated?.deck.materialId && !localGeneratedDeck?.generationJobId) {
     return localGenerated;
   }
 
-  return apiRequest<GetDeckResponse>(`/api/decks/${encodeURIComponent(deckId)}`);
+  const backendResponse = await apiRequest<GetDeckResponse>(`/api/decks/${encodeURIComponent(deckId)}`);
+
+  return backendResponse ?? localGenerated;
 };
 
 const getLocalCardsForDeck = async (deckId: string): Promise<FlashcardDTO[]> => {

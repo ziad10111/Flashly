@@ -29,6 +29,7 @@
     "test:deck-deletion": "tsx scripts/test-deck-deletion.ts",
     "test:free-trial": "tsx scripts/test-free-trial.ts",
     "test:runtime-validation": "tsx scripts/test-runtime-validation.ts",
+    "test:generation-jobs": "tsx scripts/test-generation-jobs.ts",
     "test:server-readiness-route": "tsx scripts/test-server-readiness-route.ts",
     "test:staging-smoke-report": "node scripts/test-staging-smoke-report.js",
     "test:staging-clerk-token-provider": "node scripts/test-staging-clerk-token-provider.js",

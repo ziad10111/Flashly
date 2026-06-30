@@ -23,7 +23,8 @@ import {
   MAX_SOURCE_TEXT_INPUT_LENGTH,
   MIN_SOURCE_TEXT_INPUT_LENGTH,
 } from "@/api/contracts";
-import { extractMaterial, generateFlashcardsForMaterial } from "@/api/repositories/materialRepository";
+import { startGenerationJob } from "@/api/repositories/generationJobRepository";
+import { extractMaterial } from "@/api/repositories/materialRepository";
 import { createUploadJob } from "@/api/repositories/uploadRepository";
 import { PressableScale } from "@/components/animated/pressable-scale";
 import { AnimatedOwl } from "@/components/mascot/animated-owl";
@@ -37,9 +38,7 @@ import {
 } from "@/lib/navigation/routes";
 import {
   BACKGROUND_BATCH_CARD_COUNT,
-  FIRST_BATCH_CARD_COUNT,
   MAX_PROGRESSIVE_PDF_CARDS,
-  runRemainingGeneratedDeckBatches,
 } from "@/lib/progressive-generation";
 import { useStudySelectionStore } from "@/store/useStudySelectionStore";
 import { colors } from "@/theme";
@@ -109,8 +108,8 @@ const stageCopy: Record<UploadProcessingStage, { label: string; detail: string }
     detail: "Your first cards are almost ready.",
   },
   ready: {
-    label: "First cards ready",
-    detail: "You can start studying now while more cards generate in the background.",
+    label: "Generation started",
+    detail: "Flashly will keep creating cards on the backend, even if you close the app.",
   },
 };
 
@@ -292,6 +291,10 @@ const getBackendFlowErrorMessage = (error: unknown) => {
     }
 
     if (error.error.code === "not-ready") {
+      if (message.includes("persistent generation jobs require") || message.includes("database_url")) {
+        return "Persistent generation needs the backend database enabled. Set FLASHLY_DATA_MODE=database and DATABASE_URL on the server, then try again.";
+      }
+
       if (message.includes("compressed page data") || message.includes("pdf parser")) {
         return "Flashly could not parse selectable text from this PDF. Try a simpler text-based PDF, TXT/MD file, or readable JPG/PNG image.";
       }
@@ -658,9 +661,8 @@ export function UploadScreen() {
   const setProcessingStage = useFlashlyUploadStore((state) => state.setProcessingStage);
   const setOcrRequired = useFlashlyUploadStore((state) => state.setOcrRequired);
   const completeMockGeneration = useFlashlyUploadStore((state) => state.completeMockGeneration);
-  const createPartialGeneratedDeck = useFlashlyUploadStore((state) => state.createPartialGeneratedDeck);
-  const persistGeneratedDeckResponse = useFlashlyUploadStore((state) => state.persistGeneratedDeckResponse);
   const resetUpload = useFlashlyUploadStore((state) => state.resetUpload);
+  const syncGenerationJob = useFlashlyUploadStore((state) => state.syncGenerationJob);
   const [isSelecting, setIsSelecting] = useState(false);
   const [isBackendProcessing, setIsBackendProcessing] = useState(false);
   const [chunkProgress, setChunkProgress] = useState<ChunkedUploadProgress | null>(null);
@@ -961,75 +963,41 @@ export function UploadScreen() {
       setProcessingStage("generating", 78);
 
       const isProgressivePdf = isPdfUpload(selectedFile);
+      const requestedCardCount = isProgressivePdf ? MAX_PROGRESSIVE_PDF_CARDS : 10;
+      const batchSize = isProgressivePdf ? BACKGROUND_BATCH_CARD_COUNT : 10;
 
-      if (isProgressivePdf && typeof __DEV__ !== "undefined" && __DEV__) {
-          console.info("[Flashly Upload] progressive generation first batch started", {
-          batchSize: FIRST_BATCH_CARD_COUNT,
-          maxCards: MAX_PROGRESSIVE_PDF_CARDS,
+      if (typeof __DEV__ !== "undefined" && __DEV__) {
+        console.info("[Flashly Upload] server generation job requested", {
+          batchSize,
+          maxCards: requestedCardCount,
           materialId: upload.materialId,
         });
       }
 
-      const generation = await generateFlashcardsForMaterial({
+      const generationJob = await startGenerationJob({
         materialId: upload.materialId,
         extractedTextPreview: extraction.extractedTextPreview,
+        deckTitle: selectedFile.name.replace(/\.[^/.]+$/, "").replace(/[-_]+/g, " ").trim() || undefined,
         generationMode: isProgressivePdf ? "comprehensive" : "sample",
-        batchMode: isProgressivePdf ? "batch" : "all",
-        batchIndex: isProgressivePdf ? 0 : undefined,
-        batchSize: isProgressivePdf ? FIRST_BATCH_CARD_COUNT : undefined,
-        startQuestionIndex: isProgressivePdf ? 0 : undefined,
-        maxCards: isProgressivePdf ? MAX_PROGRESSIVE_PDF_CARDS : 10,
-        requestedCardCount: isProgressivePdf ? FIRST_BATCH_CARD_COUNT : 10,
+        batchSize,
+        requestedCardCount,
         idempotencyKey: upload.idempotencyKey,
       });
 
       setProcessingStage("creating", 94);
-      const persistedDeckId = isProgressivePdf
-        ? createPartialGeneratedDeck(generation, {
-            backgroundBatchSize: BACKGROUND_BATCH_CARD_COUNT,
-            generationSourceText: extraction.extractedTextPreview,
-            maxGeneratedCards: MAX_PROGRESSIVE_PDF_CARDS,
-            nextBatchStartIndex: FIRST_BATCH_CARD_COUNT,
-          })
-        : persistGeneratedDeckResponse(generation);
+      syncGenerationJob(generationJob);
+      setProcessingStage("ready", 100);
+      const persistedDeckId = generationJob.deckId;
 
-      if (!persistedDeckId || useFlashlyUploadStore.getState().generatedCardsByDeckId[persistedDeckId]?.length === 0) {
-        throw new UploadFlowError("Flashly generated cards, but could not save the deck locally. Please try again.");
+      if (!persistedDeckId) {
+        throw new UploadFlowError("Flashly created a generation job, but did not return a deck id. Please try again.");
       }
       triggerSuccessHaptic();
 
       navigateToGeneratedDeck(
         persistedDeckId,
-        isProgressivePdf ? "progressive-first-batch-ready" : "generation-complete",
+        "generation-job-started",
       );
-
-      if (isProgressivePdf) {
-        if (typeof __DEV__ !== "undefined" && __DEV__) {
-          console.info("[Flashly Upload] partial deck created", {
-            deckId: persistedDeckId,
-            expectedTotalCards: generation.expectedTotalCards,
-            firstBatchCardCount: generation.cards.length,
-            hasMore: generation.hasMore,
-          });
-        }
-
-        // Background batches are requested while the app stays open; in database mode,
-        // each successful batch is persisted by the backend and mirrored locally.
-        if (generation.hasMore) {
-          void runRemainingGeneratedDeckBatches({
-            batchSize: BACKGROUND_BATCH_CARD_COUNT,
-            deckId: persistedDeckId,
-            errorToMessage: getBackendFlowErrorMessage,
-            extractedTextPreview: extraction.extractedTextPreview ?? "",
-            idempotencyKey: upload.idempotencyKey,
-            materialId: upload.materialId,
-            maxCards: MAX_PROGRESSIVE_PDF_CARDS,
-            startQuestionIndex: FIRST_BATCH_CARD_COUNT,
-          });
-        } else {
-          useFlashlyUploadStore.getState().markGeneratedDeckComplete(persistedDeckId);
-        }
-      }
     } catch (error) {
       const message = getBackendFlowErrorMessage(error);
 

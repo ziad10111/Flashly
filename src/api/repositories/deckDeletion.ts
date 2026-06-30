@@ -1,12 +1,30 @@
 import type { DeckDTO } from "../contracts";
 
-export type DeckDeletionStatus = DeckDTO["status"] | "complete" | "unknown" | "weak-cards";
+export type DeckDeletionStatus =
+  | DeckDTO["status"]
+  | "queued"
+  | "processing"
+  | "partial"
+  | "completed"
+  | "failed"
+  | "complete"
+  | "unknown"
+  | "weak-cards";
 
 export type DeckDeletionSnapshot = {
   deckId: string;
   deckStatus?: DeckDeletionStatus;
   generationJobId?: string;
-  generationStatus?: "generating" | "complete" | "partial-error";
+  generationStatus?:
+    | "queued"
+    | "processing"
+    | "partial"
+    | "completed"
+    | "failed"
+    | "cancelled"
+    | "generating"
+    | "complete"
+    | "partial-error";
   hasLocalGeneratedDeck: boolean;
   hasLocalStaticDeck: boolean;
   useBackendApi: boolean;
@@ -57,7 +75,10 @@ export const classifyDeckForDeletion = (snapshot: DeckDeletionSnapshot): DeckDel
   const generationStatus = getGenerationStatus(snapshot);
   const isGenerating =
     generationStatus === "generating" ||
+    generationStatus === "queued" ||
     generationStatus === "partial-error" ||
+    generationStatus === "partial" ||
+    generationStatus === "failed" ||
     generationStatus === "processing";
   const isLegacyMock = isLegacyLocalOrMockDeckId(snapshot.deckId);
 
